@@ -5,6 +5,7 @@ import akka.event.Logging
 import akka.pattern._
 import akka.util.Timeout
 import com.roundeights.hasher.Digest
+import com.roundeights.hasher.Implicits._
 import moshpit.VClock
 import java.util.{Calendar, Date}
 
@@ -19,17 +20,19 @@ class AppDbProxy(appDb:ActorRef) {
   import scala.concurrent.ExecutionContext.Implicits.global
   import AppDb.Messages
   implicit val timeout = Timeout(5 seconds)
-  def queryRootHash() = ask(appDb, Messages.QueryRootHash.Request()).mapTo[Messages.QueryRootHash.Response].map(_.hash)
+  def queryRootHash():Future[Digest] =
+    ask(appDb, Messages.QueryRootHash.Request()).mapTo[Messages.QueryRootHash.Response].map(_.hash)
   def queryApps():Future[Map[String, Digest]] =
     ask(appDb, Messages.QueryApps.Request).mapTo[Messages.QueryApps.Response].map(_.apps)
-  def queryApp(appId:String) = ask(appDb, Messages.QueryApp.Request(appId)).mapTo[Messages.QueryApp.Response].map(_.instances)
-  def queryInstance(appId:String, instanceGuid:String) =
-    ask(appDb, Messages.QueryInstance.Request(appId, instanceGuid))
+  def queryApp(appId:String):Future[Map[String, VClock]] =
+    ask(appDb, Messages.QueryApp.Request(appId)).mapTo[Messages.QueryApp.Response].map(_.instances)
+  def queryInstance(appId:String, instanceGuid:String):Future[Messages.QueryInstance.Response] =
+    ask(appDb, Messages.QueryInstance.Request(appId, instanceGuid)).mapTo[Messages.QueryInstance.Response]
   def updateInstance(appId:String, instanceGuid:String, instanceData:String):Unit =
     appDb ! Messages.UpdateInstance(appId, instanceGuid, instanceData)
-  def pingInstance(appId:String, instanceGuid:String) =
-    ask(appDb, Messages.PingInstance.Request(appId, instanceGuid))
-  def syncInstance(appId:String, instanceGuid:String, meta:InstanceMetaInfo, data:String) =
+  def pingInstance(appId:String, instanceGuid:String):Future[Messages.PingInstance.Response] =
+    ask(appDb, Messages.PingInstance.Request(appId, instanceGuid)).mapTo[Messages.PingInstance.Response]
+  def syncInstance(appId:String, instanceGuid:String, meta:InstanceMetaInfo, data:String):Unit =
     appDb ! Messages.SyncInstance(appId, instanceGuid, meta, data)
 }
 
@@ -39,6 +42,9 @@ object AppDb {
     case class SyncInstance(appId:String, instanceGuid:String, meta:InstanceMetaInfo, data:String)
     object PingInstance {
       case class Request(appId: String, instanceGuid: String)
+      trait Response
+      case class Success() extends Response
+      case class NotExists() extends Response
     }
 
     object QueryRootHash {
@@ -109,6 +115,42 @@ class AppDb(ourGuid:String) extends Actor {
               instances = instances.updated(instanceGuid, (newMeta, ourData))
             }
           }
+      }
+
+    case Messages.PingInstance.Request(appId, instanceGuid) =>
+      instances.get(instanceGuid) match {
+        case None =>
+          log.warning(s"ping of non existing instance $appId::$instanceGuid")
+          sender() ! Messages.PingInstance.NotExists()
+        case Some((meta, data)) =>
+          log.info(s"pinging instance $appId:$instanceGuid")
+          val newMeta = meta.update(ourGuid, Calendar.getInstance().getTime)
+          instances = instances.updated(instanceGuid, (newMeta, data))
+      }
+
+    case Messages.QueryRootHash.Request() =>
+      val rootHash = instances.toString().sha1
+      sender() ! Messages.QueryRootHash.Response(rootHash)
+
+    case Messages.QueryApps.Request() =>
+      val appHashes = apps.map({case (appId, instancesGuids) => {
+        val appIntsances = instancesGuids.map(instances.apply(_))
+        (appId, appIntsances.toString().md5)
+      }})
+      sender ! Messages.QueryApps.Response(appHashes)
+
+    case Messages.QueryApp.Request(appId) =>
+      val appIntsances = apps.getOrElse(appId, Set.empty).map(guid => (guid, instances(guid)._1.vclock))
+      sender ! Messages.QueryApp.Response(appIntsances.toMap)
+
+    case Messages.QueryInstance.Request(appId, instanceGuid) =>
+      instances.get(instanceGuid) match {
+        case None =>
+          log.warning(s"queried non existing instance $appId::$instanceGuid")
+          sender() ! Messages.QueryInstance.NotExists()
+        case Some((meta, data)) =>
+          log.info(s"successfully queried instance $appId::$instanceGuid")
+          sender() ! Messages.QueryInstance.Success(meta, data)
       }
   }
 }

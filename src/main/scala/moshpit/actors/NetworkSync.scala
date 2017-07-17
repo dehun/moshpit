@@ -97,7 +97,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) extends 
         appDbProxy.queryInstance(appId, instanceGuid).andThen({
           case Success(AppDb.Messages.QueryInstance.Success(meta, data)) =>
             p2p ! P2p.Messages.Send(sender, Messages.PushFullInstance(appId, instanceGuid, meta, data))
-          case Success(AppDb.Messages.QueryInstance.NotExists) =>
+          case Success(AppDb.Messages.QueryInstance.NotExists()) =>
             log.warning("requested non existing instance, strange")
         })
 
