@@ -1,6 +1,6 @@
 package moshpit.actors
 
-import akka.actor.{Actor, ActorRef}
+import akka.actor.{Actor, ActorRef, Props}
 import akka.event.Logging
 import akka.pattern._
 import akka.util.Timeout
@@ -37,6 +37,8 @@ class AppDbProxy(appDb:ActorRef) {
 }
 
 object AppDb {
+  def props(ourGuid:String):Props = Props(new AppDb(ourGuid))
+
   object Messages {
     case class UpdateInstance(appId:String, instanceGuid:String, instanceData:String)
     case class SyncInstance(appId:String, instanceGuid:String, meta:InstanceMetaInfo, data:String)

@@ -11,9 +11,9 @@ class MoshpitMain extends Actor {
   private val log =  Logging(context.system, this)
   log.info(s"starting with $peerGuid")
 
-  val config = ConfigFactory.load()
-  val seeds = config.getStringList("moshpit.seeds").asScala
-  private val appDb = context.actorOf(Props[AppDb], "appDb")
+  private val config = ConfigFactory.load()
+  private val seeds = config.getStringList("moshpit.seeds").asScala
+  private val appDb = context.actorOf(AppDb.props(peerGuid), "appDb")
   private val networkSync = context.actorOf(NetworkSync.props(peerGuid, seeds, appDb), "networkSync")
 
   override def receive: Receive = {
