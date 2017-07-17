@@ -16,4 +16,9 @@ class VClock(val stamps: Map[String, Int]) {
   def isSubclockOf(of:VClock):Boolean =
     stamps.keySet.subsetOf(of.stamps.keySet) &&
       stamps.keySet.forall(k => stamps(k) <= of.stamps(k))
+
+  def update(requester:String):VClock = {
+    val newStamp = stamps.get(requester).map(_ + 1).getOrElse(1)
+    new VClock(stamps.updated(requester, newStamp))
+  }
 }
