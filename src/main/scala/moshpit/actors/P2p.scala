@@ -41,9 +41,9 @@ class P2p(ourGuid:String, seeds:Seq[String]) extends Actor {
   private var subscribers = Set.empty[ActorRef]
   import context.dispatcher
 
-  context.system.scheduler.schedule(1 seconds, 1 seconds,
+  context.system.scheduler.schedule(60 seconds, 1 seconds,
     context.self, P2p.Tasks.AnnouncePeers())
-  context.system.scheduler.schedule(2 second, 2 second,
+  context.system.scheduler.schedule(60 seconds, 2 second,
     context.self, P2p.Tasks.ReconnectPeers())
 
   def hostportToActorPath(s:String) = ActorPath.fromString(s"akka.tcp://Main@$s/user/app/networkSync/p2p")

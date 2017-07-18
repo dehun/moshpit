@@ -23,7 +23,7 @@ class AppDbProxy(appDb:ActorRef) {
   def queryRootHash():Future[Digest] =
     ask(appDb, Messages.QueryRootHash.Request()).mapTo[Messages.QueryRootHash.Response].map(_.hash)
   def queryApps():Future[Map[String, Digest]] =
-    ask(appDb, Messages.QueryApps.Request).mapTo[Messages.QueryApps.Response].map(_.apps)
+    ask(appDb, Messages.QueryApps.Request()).mapTo[Messages.QueryApps.Response].map(_.apps)
   def queryApp(appId:String):Future[Map[String, VClock]] =
     ask(appDb, Messages.QueryApp.Request(appId)).mapTo[Messages.QueryApp.Response].map(_.instances)
   def queryInstance(appId:String, instanceGuid:String):Future[Messages.QueryInstance.Response] =
@@ -135,6 +135,7 @@ class AppDb(ourGuid:String) extends Actor {
       sender() ! Messages.QueryRootHash.Response(rootHash)
 
     case Messages.QueryApps.Request() =>
+      log.info("querying apps")
       val appHashes = apps.map({case (appId, instancesGuids) => {
         val appIntsances = instancesGuids.map(instances.apply(_))
         (appId, appIntsances.toString().md5)
@@ -154,5 +155,8 @@ class AppDb(ourGuid:String) extends Actor {
           log.info(s"successfully queried instance $appId::$instanceGuid")
           sender() ! Messages.QueryInstance.Success(meta, data)
       }
+    case _ =>
+      log.error("unknown message received, failing")
+      ???
   }
 }

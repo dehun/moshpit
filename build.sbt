@@ -14,4 +14,5 @@ libraryDependencies ++=
        "com.typesafe.akka" %% "akka-remote" % "2.5.3",
        "org.typelevel" %% "cats" % "0.9.0",
        "com.roundeights" %% "hasher" % "1.2.0",
-       "com.typesafe.akka" %% "akka-http" % "10.0.9" )
+       "com.typesafe.akka" %% "akka-http" % "10.0.9",
+       "com.typesafe.akka" %% "akka-http-spray-json" % "10.0.7")

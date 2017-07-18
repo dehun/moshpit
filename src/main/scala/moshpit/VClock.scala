@@ -21,4 +21,6 @@ class VClock(val stamps: Map[String, Int]) {
     val newStamp = stamps.get(requester).map(_ + 1).getOrElse(1)
     new VClock(stamps.updated(requester, newStamp))
   }
+
+  override def toString: String = s"VClock{$stamps}"
 }

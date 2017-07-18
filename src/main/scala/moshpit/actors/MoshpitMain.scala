@@ -15,6 +15,7 @@ class MoshpitMain extends Actor {
   private val seeds = config.getStringList("moshpit.seeds").asScala
   private val appDb = context.actorOf(AppDb.props(peerGuid), "appDb")
   private val networkSync = context.actorOf(NetworkSync.props(peerGuid, seeds, appDb), "networkSync")
+  private val restapi = context.actorOf(RestApi.props("localhost", config.getInt("moshpit.restApiPort"), appDb))
 
   override def receive: Receive = {
     case x => Console.println(x)
