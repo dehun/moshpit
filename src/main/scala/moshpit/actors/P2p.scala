@@ -41,9 +41,9 @@ class P2p(ourGuid:String, seeds:Seq[String]) extends Actor {
   private var subscribers = Set.empty[ActorRef]
   import context.dispatcher
 
-  context.system.scheduler.schedule(60 seconds, 1 seconds,
+  context.system.scheduler.schedule(1 seconds, 1 seconds,
     context.self, P2p.Tasks.AnnouncePeers())
-  context.system.scheduler.schedule(60 seconds, 2 second,
+  context.system.scheduler.schedule(2 seconds, 2 second,
     context.self, P2p.Tasks.ReconnectPeers())
 
   def hostportToActorPath(s:String) = ActorPath.fromString(s"akka.tcp://Main@$s/user/app/networkSync/p2p")
@@ -61,8 +61,11 @@ class P2p(ourGuid:String, seeds:Seq[String]) extends Actor {
       sender ! P2p.NetMessages.HelloAck(ourGuid)
     case payloadMsg:P2p.NetMessages.Message => subscribers.foreach(_ ! payloadMsg)
     case P2p.NetMessages.AnnouncePeers(newPaths) =>
-      log.info("got new paths {}", newPaths.diff(knownPaths))
-      knownPaths = knownPaths ++ newPaths
+      val diff = newPaths.diff(knownPaths)
+      if (diff.nonEmpty) {
+        log.info("got new paths {}", diff)
+        knownPaths = knownPaths ++ diff
+      }
     case P2p.Messages.Subscribe(subscriber) => subscribers = subscribers + subscriber
     case P2p.Messages.Broadcast(payload) => peers.foreach(_._2 ! P2p.NetMessages.Message(ourGuid, payload)) // wtf?
     case P2p.Messages.Send(guid, payload) => peers.get(guid).foreach(_ ! P2p.NetMessages.Message(ourGuid, payload))

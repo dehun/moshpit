@@ -87,7 +87,7 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor {
 
 
   implicit val materializer = ActorMaterializer()
-  val bindingFuture = Http()(context.system).bindAndHandle(RouteResult.route2HandlerFlow(route), "localhost", 8080)
+  val bindingFuture = Http()(context.system).bindAndHandle(RouteResult.route2HandlerFlow(route), bindHost, bindPort)
 
   override def receive: Receive = {case _ => {}}
 }

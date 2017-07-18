@@ -3,22 +3,23 @@ package moshpit.actors
 import com.roundeights.hasher.Implicits._
 import akka.actor.{Actor, ActorRef, Props}
 import akka.event.Logging
-import com.roundeights.hasher.Digest
+import com.roundeights.hasher.Hash
 import moshpit.VClock
 import moshpit.actors.NetworkSync.Tasks.AdvertiseRootTask
 import cats._
 import cats.data._
 import cats.implicits._
 import scala.util.{Success, Failure}
+import scala.concurrent.duration._
 
 
 object NetworkSync {
   def props(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) = Props(new NetworkSync(ourGuid, seeds, appDbRef))
 
   object Messages {
-    case class AdvertiseRootHash(hash:Digest) extends P2p.P2pMessagePayload
-    case class RequestApps(hash:Digest) extends P2p.P2pMessagePayload
-    case class PushApps(apps:Map[String, Digest]) extends P2p.P2pMessagePayload
+    case class AdvertiseRootHash(hash:Hash) extends P2p.P2pMessagePayload
+    case class RequestApps(hash:Hash) extends P2p.P2pMessagePayload
+    case class PushApps(apps:Map[String, Hash]) extends P2p.P2pMessagePayload
     case class RequestInstancesMeta(appIds:Set[String]) extends P2p.P2pMessagePayload
     case class PushInstancesMeta(apps:Map[String, Map[String, VClock]]) extends P2p.P2pMessagePayload
     case class RequestFullInstance(appId:String, instanceGuid:String) extends P2p.P2pMessagePayload
@@ -48,6 +49,9 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) extends 
   val appDbProxy = new AppDbProxy(appDbRef)
   override def preStart(): Unit = p2p ! P2p.Messages.Subscribe(context.self)
   import context.dispatcher
+
+  context.system.scheduler.schedule(1 seconds, 1 seconds,
+    context.self, Tasks.AdvertiseRootTask())
 
   override def receive: Receive = {
     case Tasks.AdvertiseRootTask() =>

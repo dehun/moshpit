@@ -12,7 +12,7 @@ object VClock {
   def empty = new VClock(Map.empty[String, Int])
 }
 
-class VClock(val stamps: Map[String, Int]) {
+case class VClock(stamps: Map[String, Int]) {
   def isSubclockOf(of:VClock):Boolean =
     stamps.keySet.subsetOf(of.stamps.keySet) &&
       stamps.keySet.forall(k => stamps(k) <= of.stamps(k))

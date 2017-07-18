@@ -4,7 +4,7 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.event.Logging
 import akka.pattern._
 import akka.util.Timeout
-import com.roundeights.hasher.Digest
+import com.roundeights.hasher.Hash
 import com.roundeights.hasher.Implicits._
 import moshpit.VClock
 import java.util.{Calendar, Date}
@@ -20,9 +20,9 @@ class AppDbProxy(appDb:ActorRef) {
   import scala.concurrent.ExecutionContext.Implicits.global
   import AppDb.Messages
   implicit val timeout = Timeout(5 seconds)
-  def queryRootHash():Future[Digest] =
+  def queryRootHash():Future[Hash] =
     ask(appDb, Messages.QueryRootHash.Request()).mapTo[Messages.QueryRootHash.Response].map(_.hash)
-  def queryApps():Future[Map[String, Digest]] =
+  def queryApps():Future[Map[String, Hash]] =
     ask(appDb, Messages.QueryApps.Request()).mapTo[Messages.QueryApps.Response].map(_.apps)
   def queryApp(appId:String):Future[Map[String, VClock]] =
     ask(appDb, Messages.QueryApp.Request(appId)).mapTo[Messages.QueryApp.Response].map(_.instances)
@@ -51,12 +51,12 @@ object AppDb {
 
     object QueryRootHash {
       case class Request()
-      case class Response(hash:Digest)
+      case class Response(hash:Hash)
     }
 
     object QueryApps {
       case class Request()
-      case class Response(apps: Map[String, Digest])
+      case class Response(apps: Map[String, Hash])
     }
 
     object QueryApp {
@@ -131,14 +131,14 @@ class AppDb(ourGuid:String) extends Actor {
       }
 
     case Messages.QueryRootHash.Request() =>
-      val rootHash = instances.toString().sha1
+      val rootHash = instances.toString().sha1.hash
       sender() ! Messages.QueryRootHash.Response(rootHash)
 
     case Messages.QueryApps.Request() =>
       log.info("querying apps")
       val appHashes = apps.map({case (appId, instancesGuids) => {
         val appIntsances = instancesGuids.map(instances.apply(_))
-        (appId, appIntsances.toString().md5)
+        (appId, appIntsances.toString().sha1.hash)
       }})
       sender ! Messages.QueryApps.Response(appHashes)
 
