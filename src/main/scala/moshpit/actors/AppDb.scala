@@ -12,8 +12,9 @@ import java.util.{Calendar, Date}
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
-case class InstanceMetaInfo(vclock: VClock, lastUpdated:Date) {
-  def update(requester:String, now:Date):InstanceMetaInfo = InstanceMetaInfo(vclock.update(requester), now)
+case class InstanceMetaInfo(vclock: VClock, lastUpdated:Date, wasDeleted:Boolean) {
+  def update(requester:String, now:Date):InstanceMetaInfo = InstanceMetaInfo(vclock.update(requester), now, wasDeleted=false)
+  def delete(requester:String, now:Date):InstanceMetaInfo = InstanceMetaInfo(vclock.update(requester), now, wasDeleted=true)
 }
 
 class AppDbProxy(appDb:ActorRef) {
@@ -34,6 +35,8 @@ class AppDbProxy(appDb:ActorRef) {
     ask(appDb, Messages.PingInstance.Request(appId, instanceGuid)).mapTo[Messages.PingInstance.Response]
   def syncInstance(appId:String, instanceGuid:String, meta:InstanceMetaInfo, data:String):Unit =
     appDb ! Messages.SyncInstance(appId, instanceGuid, meta, data)
+  def deleteInstance(appId:String, instanceGuid:String):Future[Messages.DeleteInstance.Response] =
+    ask(appDb, Messages.DeleteInstance.Request(appId, instanceGuid)).mapTo[Messages.DeleteInstance.Response]
 }
 
 object AppDb {
@@ -70,6 +73,13 @@ object AppDb {
       case class NotExists() extends Response
       case class Success(metainfo:InstanceMetaInfo, data: String) extends Response
     }
+
+    object DeleteInstance {
+      case class Request(appId:String, instanceGuid:String)
+      trait Response
+      case class Success() extends Response
+      case class NotFound() extends Response
+    }
   }
 }
 
@@ -90,7 +100,8 @@ class AppDb(ourGuid:String) extends Actor {
         case None =>
           log.info(s"registering new instance $appId::$instanceGuid")
           apps = apps.updated(appId, apps.get(appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
-          val newMetaInfo = InstanceMetaInfo(VClock.empty.update(ourGuid), Calendar.getInstance().getTime())
+          val newMetaInfo = InstanceMetaInfo(VClock.empty.update(ourGuid), Calendar.getInstance().getTime(),
+            wasDeleted = false)
           instances = instances.updated(instanceGuid, (newMetaInfo, instanceData))
       }
 
@@ -108,7 +119,7 @@ class AppDb(ourGuid:String) extends Actor {
             log.info(s"ignoring update of $appId::$instanceGuid as ours is more advance")
           } else { // conflict, newest wins
             val newMeta = InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock),
-              Calendar.getInstance().getTime)
+              Calendar.getInstance().getTime, wasDeleted = false)
             if (theirMeta.lastUpdated.compareTo(ourMeta.lastUpdated) > 0) {
               log.info(s"got conflicting entries for $appId::$instanceGuid, and their is newer")
               instances = instances.updated(instanceGuid, (newMeta, theirData))
@@ -128,6 +139,7 @@ class AppDb(ourGuid:String) extends Actor {
           log.info(s"pinging instance $appId:$instanceGuid")
           val newMeta = meta.update(ourGuid, Calendar.getInstance().getTime)
           instances = instances.updated(instanceGuid, (newMeta, data))
+          sender() ! Messages.PingInstance.Success()
       }
 
     case Messages.QueryRootHash.Request() =>
@@ -154,6 +166,17 @@ class AppDb(ourGuid:String) extends Actor {
         case Some((meta, data)) =>
           log.info(s"successfully queried instance $appId::$instanceGuid")
           sender() ! Messages.QueryInstance.Success(meta, data)
+      }
+
+    case Messages.DeleteInstance.Request(appId, instanceGuid) =>
+      if (instances.contains(instanceGuid)) {
+        log.info(s"deleting $appId::$instanceGuid")
+        instances -= instanceGuid
+        apps = apps.updated(appId, apps.get(appId).map(is => is - instanceGuid).getOrElse(Set.empty))
+        sender() ! Messages.DeleteInstance.Success()
+      } else {
+        log.info(s"deleting  error, not found $appId::$instanceGuid")
+        sender() ! Messages.DeleteInstance.NotFound()
       }
     case _ =>
       log.error("unknown message received, failing")

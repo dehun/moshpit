@@ -10,17 +10,6 @@ import akka.stream.ActorMaterializer
 import spray.json._
 
 import scala.io.StdIn
-import scala.io.StdIn
-
-//import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-//import akka.http.scaladsl.Http
-//import akka.http.scaladsl.model._
-//import akka.http.scaladsl.server.Directives._
-//import akka.http.scaladsl.server.Route
-//import akka.http.scaladsl.server.Directives._
-//import akka.stream.ActorMaterializer
-//import akka.stream.ActorMaterializer
-
 
 object RestApi {
   def props(bindHost:String, bindPort:Int, appDbRef:ActorRef):Props =
@@ -81,8 +70,18 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor {
               HttpResponse(200, entity="pinged")
           })
         }
+      } ~
+      delete {
+        log.info("deleting $appId::$instanceGuid")
+        complete {
+          appDbProxy.deleteInstance(appId, instanceGuid).map({
+            case AppDb.Messages.DeleteInstance.Success() =>
+              HttpResponse(200, entity="instance was successfully deleted")
+            case AppDb.Messages.DeleteInstance.NotFound() =>
+              HttpResponse(404, entity="instance was not found")
+          })
+        }
       }
-
     }
 
 

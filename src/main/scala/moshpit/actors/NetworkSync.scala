@@ -50,7 +50,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) extends 
   override def preStart(): Unit = p2p ! P2p.Messages.Subscribe(context.self)
   import context.dispatcher
 
-  context.system.scheduler.schedule(1 seconds, 1 seconds,
+  context.system.scheduler.schedule(1 seconds, 60 seconds,
     context.self, Tasks.AdvertiseRootTask())
 
   override def receive: Receive = {

@@ -76,8 +76,6 @@ class P2p(ourGuid:String, seeds:Seq[String]) extends Actor {
         context.system.settings.config.getString("akka.remote.netty.tcp.hostname")+ ":" +
           context.system.settings.config.getInt("akka.remote.netty.tcp.port").toString)
       val toReconnect = knownPaths.diff(connectedPaths)
-      log.info(s"reconnecting peers $toReconnect")
-
       toReconnect.foreach(path =>
         context.actorSelection(path).resolveOne(5 seconds).andThen({
           case Success(ref:ActorRef) =>
