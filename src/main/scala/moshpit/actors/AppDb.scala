@@ -147,7 +147,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
           log.warning(s"ping of non existing instance $appId::$instanceGuid")
           sender() ! Messages.PingInstance.NotExists()
         case Some((meta, data)) =>
-          if (meta.wasDeleted) {
+          if (!meta.wasDeleted) {
             log.info(s"pinging instance $appId:$instanceGuid")
             val newMeta = meta.update(ourGuid, DateTime.now())
             instances = instances.updated(instanceGuid, (newMeta, data))

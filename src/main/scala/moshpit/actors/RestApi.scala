@@ -49,6 +49,7 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
   }
 
   implicit val successFormat = jsonFormat1(SuccessRes)
+  implicit val failureFormat = jsonFormat1(FailureRes)
   implicit val instanceFormat = jsonFormat4(Instance)
   implicit val appFormat = jsonFormat1(App)
 }
