@@ -7,14 +7,16 @@ import akka.util.Timeout
 import com.roundeights.hasher.Hash
 import com.roundeights.hasher.Implicits._
 import moshpit.VClock
-import java.util.{Calendar, Date}
+import com.github.nscala_time.time.Imports.DateTime
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
-case class InstanceMetaInfo(vclock: VClock, lastUpdated:Date, wasDeleted:Boolean) {
-  def update(requester:String, now:Date):InstanceMetaInfo = InstanceMetaInfo(vclock.update(requester), now, wasDeleted=false)
-  def delete(requester:String, now:Date):InstanceMetaInfo = InstanceMetaInfo(vclock.update(requester), now, wasDeleted=true)
+case class InstanceMetaInfo(vclock: VClock, lastUpdated:DateTime, wasDeleted:Boolean) {
+  def update(requester:String, now:DateTime):InstanceMetaInfo = InstanceMetaInfo(vclock.update(requester), now, wasDeleted=false)
+  def delete(requester:String, now:DateTime):InstanceMetaInfo = InstanceMetaInfo(vclock.update(requester), now, wasDeleted=true)
+  def isDead(instanceTtlSec:Int):Boolean =
+    wasDeleted || (lastUpdated.compareTo(DateTime.now().minus(instanceTtlSec*1000)) == -1)
 }
 
 class AppDbProxy(appDb:ActorRef) {
@@ -25,8 +27,8 @@ class AppDbProxy(appDb:ActorRef) {
     ask(appDb, Messages.QueryRootHash.Request()).mapTo[Messages.QueryRootHash.Response].map(_.hash)
   def queryApps():Future[Map[String, Hash]] =
     ask(appDb, Messages.QueryApps.Request()).mapTo[Messages.QueryApps.Response].map(_.apps)
-  def queryApp(appId:String):Future[Map[String, VClock]] =
-    ask(appDb, Messages.QueryApp.Request(appId)).mapTo[Messages.QueryApp.Response].map(_.instances)
+  def queryApp(appId:String, stripped:Boolean):Future[Map[String, VClock]] =
+    ask(appDb, Messages.QueryApp.Request(appId, stripped)).mapTo[Messages.QueryApp.Response].map(_.instances)
   def queryInstance(appId:String, instanceGuid:String):Future[Messages.QueryInstance.Response] =
     ask(appDb, Messages.QueryInstance.Request(appId, instanceGuid)).mapTo[Messages.QueryInstance.Response]
   def updateInstance(appId:String, instanceGuid:String, instanceData:String):Unit =
@@ -40,7 +42,8 @@ class AppDbProxy(appDb:ActorRef) {
 }
 
 object AppDb {
-  def props(ourGuid:String):Props = Props(new AppDb(ourGuid))
+  def props(ourGuid:String, intsanceTtlSec:Int, gcInstanceTtlSec:Int, gcIntervalSec:Int):Props =
+    Props(new AppDb(ourGuid, gcInstanceTtlSec, gcInstanceTtlSec, gcIntervalSec))
 
   object Messages {
     case class UpdateInstance(appId:String, instanceGuid:String, instanceData:String)
@@ -63,7 +66,7 @@ object AppDb {
     }
 
     object QueryApp {
-      case class Request(appId: String)
+      case class Request(appId: String, stripped:Boolean)
       case class Response(instances: Map[String, VClock])
     }
 
@@ -81,26 +84,34 @@ object AppDb {
       case class NotFound() extends Response
     }
   }
+
+  object Tasks {
+    case class RunGc()
+  }
 }
 
-class AppDb(ourGuid:String) extends Actor {
+class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcIntervalSec:Int) extends Actor {
   private val log =  Logging(context.system, this)
 
   private var apps = Map.empty[String, Set[String]] // appId -> Set[InstanceGuid]
   private var instances = Map.empty[String, (InstanceMetaInfo, String)] // instanceGuid -> (metainfo, data)
 
   import AppDb._
+  import context.dispatcher
+  context.system.scheduler.schedule(gcIntervalSec.seconds, gcIntervalSec.seconds,
+    context.self, Tasks.RunGc())
+
   override def receive: Receive = {
     case Messages.UpdateInstance(appId:String, instanceGuid:String, instanceData:String) =>
       instances.get(instanceGuid) match {
         case Some((meta, _)) =>
           log.info(s"updating old instance $appId::$instanceGuid")
-          val newMetaInfo = meta.update(ourGuid, Calendar.getInstance().getTime())
+          val newMetaInfo = meta.update(ourGuid, DateTime.now())
           instances = instances.updated(instanceGuid, (newMetaInfo, instanceData))
         case None =>
           log.info(s"registering new instance $appId::$instanceGuid")
           apps = apps.updated(appId, apps.get(appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
-          val newMetaInfo = InstanceMetaInfo(VClock.empty.update(ourGuid), Calendar.getInstance().getTime(),
+          val newMetaInfo = InstanceMetaInfo(VClock.empty.update(ourGuid), DateTime.now(),
             wasDeleted = false)
           instances = instances.updated(instanceGuid, (newMetaInfo, instanceData))
       }
@@ -119,7 +130,7 @@ class AppDb(ourGuid:String) extends Actor {
             log.info(s"ignoring update of $appId::$instanceGuid as ours is more advance")
           } else { // conflict, newest wins
             val newMeta = InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock),
-              Calendar.getInstance().getTime, wasDeleted = false)
+              DateTime.now(), wasDeleted = false)
             if (theirMeta.lastUpdated.compareTo(ourMeta.lastUpdated) > 0) {
               log.info(s"got conflicting entries for $appId::$instanceGuid, and their is newer")
               instances = instances.updated(instanceGuid, (newMeta, theirData))
@@ -136,10 +147,15 @@ class AppDb(ourGuid:String) extends Actor {
           log.warning(s"ping of non existing instance $appId::$instanceGuid")
           sender() ! Messages.PingInstance.NotExists()
         case Some((meta, data)) =>
-          log.info(s"pinging instance $appId:$instanceGuid")
-          val newMeta = meta.update(ourGuid, Calendar.getInstance().getTime)
-          instances = instances.updated(instanceGuid, (newMeta, data))
-          sender() ! Messages.PingInstance.Success()
+          if (meta.wasDeleted) {
+            log.info(s"pinging instance $appId:$instanceGuid")
+            val newMeta = meta.update(ourGuid, DateTime.now())
+            instances = instances.updated(instanceGuid, (newMeta, data))
+            sender() ! Messages.PingInstance.Success()
+          } else {
+            log.warning(s"ping of dead instance $appId::$instanceGuid")
+            sender() ! Messages.PingInstance.NotExists()
+          }
       }
 
     case Messages.QueryRootHash.Request() =>
@@ -154,8 +170,14 @@ class AppDb(ourGuid:String) extends Actor {
       }})
       sender ! Messages.QueryApps.Response(appHashes)
 
-    case Messages.QueryApp.Request(appId) =>
-      val appIntsances = apps.getOrElse(appId, Set.empty).map(guid => (guid, instances(guid)._1.vclock))
+    case Messages.QueryApp.Request(appId, stripped) =>
+      val appIntsances = apps.getOrElse(appId, Set.empty)
+          .filterNot(guid => {
+            val instance = instances(guid)
+            val deathTime = DateTime.now().minus(instanceTtlSec * 1000)
+            stripped && instance._1.isDead(instanceTtlSec)
+          })
+          .map(guid => (guid, instances(guid)._1.vclock))
       sender ! Messages.QueryApp.Response(appIntsances.toMap)
 
     case Messages.QueryInstance.Request(appId, instanceGuid) =>
@@ -178,6 +200,18 @@ class AppDb(ourGuid:String) extends Actor {
         log.info(s"deleting  error, not found $appId::$instanceGuid")
         sender() ! Messages.DeleteInstance.NotFound()
       }
+
+    case Tasks.RunGc() =>
+      log.info("running gc")
+      val instancesToClear = instances
+        .filter({ case (guid, (meta, _)) =>
+          meta.isDead(instanceTtlSec) && meta.lastUpdated.compareTo(DateTime.now().minus(gcInstanceTtlSec*1000)) == -1 })
+        .keys.toSet
+      instancesToClear.map(guid => {
+        instances = instances -- instancesToClear
+        apps = apps.map({case (app, appInstances) => (app, appInstances.filterNot(i => instancesToClear.contains(i)))})
+      })
+
     case _ =>
       log.error("unknown message received, failing")
       ???

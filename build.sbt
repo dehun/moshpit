@@ -3,6 +3,7 @@ version := "1.0"
 scalaVersion := "2.12.2"
 
 fork := true
+//retrieveManaged := true
 javaOptions := Seq("-Dmx=1024M")
 
 resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/"
@@ -15,4 +16,7 @@ libraryDependencies ++=
        "org.typelevel" %% "cats" % "0.9.0",
        "com.roundeights" %% "hasher" % "1.2.0",
        "com.typesafe.akka" %% "akka-http" % "10.0.9",
-       "com.typesafe.akka" %% "akka-http-spray-json" % "10.0.7")
+       "com.typesafe.akka" %% "akka-http-spray-json" % "10.0.7",
+       "com.github.nscala-time" %% "nscala-time" % "2.16.0")
+
+mainClass in Compile := Some("moshpit.Main")

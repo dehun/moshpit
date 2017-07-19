@@ -1,10 +1,12 @@
 <component name="libraryTable">
   <library name="SBT: org.agrona:agrona:0.9.5:jar">
     <CLASSES>
+      <root url="jar://$PROJECT_DIR$/lib_managed/jars/org.agrona/agrona/agrona-0.9.5.jar!/" />
       <root url="jar://$USER_HOME$/.ivy2/cache/org.agrona/agrona/jars/agrona-0.9.5.jar!/" />
     </CLASSES>
     <JAVADOC />
     <SOURCES>
+      <root url="jar://$PROJECT_DIR$/lib_managed/srcs/org.agrona/agrona/agrona-0.9.5-sources.jar!/" />
       <root url="jar://$USER_HOME$/.ivy2/cache/org.agrona/agrona/srcs/agrona-0.9.5-sources.jar!/" />
     </SOURCES>
   </library>

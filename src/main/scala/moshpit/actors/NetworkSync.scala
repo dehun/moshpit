@@ -81,12 +81,12 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) extends 
         })
 
       case Messages.RequestInstancesMeta(appIds) =>
-        appIds.map(appId => appDbProxy.queryApp(appId).map(r => (appId, r))).toList.sequenceU.map(res =>
+        appIds.map(appId => appDbProxy.queryApp(appId, stripped = false).map(r => (appId, r))).toList.sequenceU.map(res =>
           p2p ! P2p.Messages.Send(sender, Messages.PushInstancesMeta(res.toMap))
         )
 
       case Messages.PushInstancesMeta(theirApps) =>
-        theirApps.keys.foreach(appId => appDbProxy.queryApp(appId).map(ourInstances => {
+        theirApps.keys.foreach(appId => appDbProxy.queryApp(appId, stripped = false).map(ourInstances => {
           val theirInstances = theirApps(appId).toSet
           val toSync = theirInstances.diff(ourInstances.toSet)
           toSync//.filterNot(i => ourInstances.get(i._1).exists(v => v.isSubclockOf(i._2))) // if theirs is future of time of ours

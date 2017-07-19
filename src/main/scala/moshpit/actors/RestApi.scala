@@ -7,17 +7,54 @@ import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, Multipa
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.stream.ActorMaterializer
+import com.github.nscala_time.time.Imports.DateTime
+import moshpit.VClock
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
+import akka.http.scaladsl.marshalling.Marshal
+import org.joda.time.format.ISODateTimeFormat
 import spray.json._
-
-import scala.io.StdIn
 
 object RestApi {
   def props(bindHost:String, bindPort:Int, appDbRef:ActorRef):Props =
     Props(new RestApi(bindHost, bindPort, appDbRef))
 }
 
+// json responses
+final case class SuccessRes(note:String)
+final case class FailureRes(reason:String)
+final case class Instance(appId:String, instanceGuid:String, lastUpdated:DateTime, data:String)
+final case class App(instances:Set[String])
 
-class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor {
+trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
+  implicit object DateTimeFormat extends RootJsonFormat[DateTime] {
+    val formatter = ISODateTimeFormat.basicDateTimeNoMillis
+    def write(obj: DateTime): JsValue = {
+      JsString(formatter.print(obj))
+    }
+    def read(json: JsValue): DateTime = json match {
+      case JsString(s) => try {
+        formatter.parseDateTime(s)
+      }
+      catch {
+        case t: Throwable => error(s)
+      }
+      case _ =>
+        error(json.toString())
+    }
+
+    def error(v: Any): DateTime = {
+      val example = formatter.print(0)
+      deserializationError(f"'$v' is not a valid date value. Dates must be in compact ISO-8601 format, e.g. '$example'")
+    }
+  }
+
+  implicit val successFormat = jsonFormat1(SuccessRes)
+  implicit val instanceFormat = jsonFormat4(Instance)
+  implicit val appFormat = jsonFormat1(App)
+}
+
+
+class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor with JsonSupport {
   val appDbProxy = new AppDbProxy(appDbRef)
   private val log =  Logging(context.system, this)
   import context.dispatcher
@@ -35,8 +72,8 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor {
       get {
         complete {
           log.info(s"querying app $appId")
-          appDbProxy.queryApp(appId).map(instances => {
-            instances.keySet.toString
+          appDbProxy.queryApp(appId, stripped = true).map(instances => {
+            App(instances.keySet)
           })
         }
       }
@@ -47,7 +84,7 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor {
         complete {
           appDbProxy.queryInstance(appId, instanceGuid).map({
             case AppDb.Messages.QueryInstance.Success(meta, data) =>
-              HttpResponse(200,entity=(appId, instanceGuid, meta, data).toString())
+              HttpResponse(200, entity=Instance(appId, instanceGuid, meta.lastUpdated, data).toJson.toString())
             case AppDb.Messages.QueryInstance.NotExists() =>
               HttpResponse(404, entity="instance not found")
           })
@@ -57,7 +94,7 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor {
         entity(as[String]) { data =>
           log.info(s"putting instance $appId::$instanceGuid")
           appDbProxy.updateInstance(appId, instanceGuid, data)
-          complete(s"updated $appId::$instanceGuid with $data")
+          complete(SuccessRes(s"updated $appId::$instanceGuid with $data"))
         }
       } ~
       patch {
