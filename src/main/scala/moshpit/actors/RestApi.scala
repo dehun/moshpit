@@ -102,9 +102,9 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor wi
         complete {
           appDbProxy.pingInstance(appId, instanceGuid).map({
             case AppDb.Messages.PingInstance.NotExists() =>
-              HttpResponse(404, entity="instance not found")
+              HttpResponse(404, entity=FailureRes("instance not found").toJson.toString())
             case AppDb.Messages.PingInstance.Success() =>
-              HttpResponse(200, entity="pinged")
+              HttpResponse(200, entity=SuccessRes("pinged").toJson.toString())
           })
         }
       } ~
@@ -113,9 +113,9 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor wi
         complete {
           appDbProxy.deleteInstance(appId, instanceGuid).map({
             case AppDb.Messages.DeleteInstance.Success() =>
-              HttpResponse(200, entity="instance was successfully deleted")
+              HttpResponse(200, entity=SuccessRes("instance was successfully deleted").toJson.toString)
             case AppDb.Messages.DeleteInstance.NotFound() =>
-              HttpResponse(404, entity="instance was not found")
+              HttpResponse(404, entity=FailureRes("instance was not found").toJson.toString)
           })
         }
       }
