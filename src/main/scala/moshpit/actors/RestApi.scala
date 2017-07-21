@@ -13,6 +13,9 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.marshalling.Marshal
 import org.joda.time.format.ISODateTimeFormat
 import spray.json._
+import cats._
+import cats.implicits._
+import cats.data._
 
 object RestApi {
   def props(bindHost:String, bindPort:Int, appDbRef:ActorRef):Props =
@@ -24,6 +27,7 @@ final case class SuccessRes(note:String)
 final case class FailureRes(reason:String)
 final case class Instance(appId:String, instanceGuid:String, lastUpdated:DateTime, data:String)
 final case class App(instances:Set[String])
+final case class FullApp(instances:Set[Instance])
 final case class Apps(ids:Set[String])
 
 trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
@@ -53,6 +57,7 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
   implicit val failureFormat = jsonFormat1(FailureRes)
   implicit val instanceFormat = jsonFormat4(Instance)
   implicit val appFormat = jsonFormat1(App)
+  implicit val fullAppFormat = jsonFormat1(FullApp)
   implicit val appsFormat = jsonFormat1(Apps)
 }
 
@@ -68,6 +73,16 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor wi
         complete {
           log.info("getting apps")
           appDbProxy.queryApps().map(r => Apps(r.keySet))
+        }
+      }
+    } ~
+    path("app" / "[a-zA-Z0-9_-]+".r / "full") { appId =>
+      get {
+        complete {
+          log.info(s"querying full app $appId")
+          appDbProxy.queryFullApp(appId, stripped = true).map(instances => {
+            FullApp(instances.map(in => Instance(appId, in._1, in._2._1.lastUpdated, in._2._2)).toSet)
+          })
         }
       }
     } ~

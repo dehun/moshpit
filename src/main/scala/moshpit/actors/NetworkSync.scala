@@ -45,7 +45,7 @@ object NetworkSync {
 class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) extends Actor {
   import NetworkSync._
   private val log =  Logging(context.system, this)
-  private val p2p = context.actorOf(P2p.props(ourGuid, seeds), "p2p")
+  private val p2p = context.actorOf(P2p.props(ourGuid, appDbRef, seeds), "p2p")
   val appDbProxy = new AppDbProxy(appDbRef)
   override def preStart(): Unit = p2p ! P2p.Messages.Subscribe(context.self)
   import context.dispatcher
@@ -55,14 +55,16 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) extends 
 
   override def receive: Receive = {
     case Tasks.AdvertiseRootTask() =>
-      appDbProxy.queryRootHash().map(ourHash =>
+      appDbProxy.queryRootHash().map(ourHash => {
+        log.info("advertising root hash")
         p2p ! P2p.Messages.Broadcast(Messages.AdvertiseRootHash(ourHash))
-      )
+      })
 
     case P2p.NetMessages.Message(sender, payload) => payload match {
       case Messages.AdvertiseRootHash(theirHash) =>
         appDbProxy.queryRootHash().map(ourHash => {
           if (ourHash != theirHash) {
+            log.info("root hash mismatch, start sync")
             p2p ! P2p.Messages.Send(sender, Messages.RequestApps(theirHash))
           }
         })

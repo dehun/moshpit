@@ -31,6 +31,8 @@ class AppDbProxy(appDb:ActorRef) {
     ask(appDb, Messages.QueryApps.Request()).mapTo[Messages.QueryApps.Response].map(_.apps)
   def queryApp(appId:String, stripped:Boolean):Future[Map[String, VClock]] =
     ask(appDb, Messages.QueryApp.Request(appId, stripped)).mapTo[Messages.QueryApp.Response].map(_.instances)
+  def queryFullApp(appId:String, stripped:Boolean):Future[Map[String, (InstanceMetaInfo, String)]] =
+    ask(appDb, Messages.QueryFullApp.Request(appId, stripped)).mapTo[Messages.QueryFullApp.Response].map(_.instances)
   def queryInstance(appId:String, instanceGuid:String):Future[Messages.QueryInstance.Response] =
     ask(appDb, Messages.QueryInstance.Request(appId, instanceGuid)).mapTo[Messages.QueryInstance.Response]
   def updateInstance(appId:String, instanceGuid:String, instanceData:String):Unit =
@@ -70,6 +72,11 @@ object AppDb {
     object QueryApp {
       case class Request(appId: String, stripped:Boolean)
       case class Response(instances: Map[String, VClock])
+    }
+
+    object QueryFullApp {
+      case class Request(appId: String, stripped:Boolean)
+      case class Response(instances: Map[String, (InstanceMetaInfo, String)])
     }
 
     object QueryInstance {
@@ -161,13 +168,14 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       }
 
     case Messages.QueryRootHash.Request() =>
-      val rootHash = instances.toString().sha1.hash
+      val rootHash = instances.toList.sortBy(_._1).toString().sha1.hash
       sender() ! Messages.QueryRootHash.Response(rootHash)
 
     case Messages.QueryApps.Request() =>
       log.info("querying apps")
       val appHashes = apps.map({case (appId, instancesGuids) => {
-        val appIntsances = instancesGuids.map(instances.apply(_))
+        val appIntsances = instancesGuids.toList.sorted.map(instances.apply(_))
+        log.info("{} {}", appId, appIntsances.toString().sha1.hash)
         (appId, appIntsances.toString().sha1.hash)
       }})
       sender ! Messages.QueryApps.Response(appHashes)
@@ -177,6 +185,12 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
           .filterNot(guid => stripped && instances(guid)._1.isDead())
           .map(guid => (guid, instances(guid)._1.vclock))
       sender ! Messages.QueryApp.Response(appIntsances.toMap)
+
+    case Messages.QueryFullApp.Request(appId, stripped) =>
+      val appIntsances = apps.getOrElse(appId, Set.empty)
+        .filterNot(guid => stripped && instances(guid)._1.isDead())
+        .map(guid => (guid, instances(guid))).toMap
+      sender ! Messages.QueryFullApp.Response(appIntsances)
 
     case Messages.QueryInstance.Request(appId, instanceGuid) =>
       instances.get(instanceGuid).filter(!_._1.isDead()).filter(_._1.appId==appId) match {
