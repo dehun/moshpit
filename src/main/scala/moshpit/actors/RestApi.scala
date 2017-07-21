@@ -24,6 +24,7 @@ final case class SuccessRes(note:String)
 final case class FailureRes(reason:String)
 final case class Instance(appId:String, instanceGuid:String, lastUpdated:DateTime, data:String)
 final case class App(instances:Set[String])
+final case class Apps(ids:Set[String])
 
 trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
   implicit object DateTimeFormat extends RootJsonFormat[DateTime] {
@@ -52,6 +53,7 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
   implicit val failureFormat = jsonFormat1(FailureRes)
   implicit val instanceFormat = jsonFormat4(Instance)
   implicit val appFormat = jsonFormat1(App)
+  implicit val appsFormat = jsonFormat1(Apps)
 }
 
 
@@ -65,7 +67,7 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor wi
       get {
         complete {
           log.info("getting apps")
-          appDbProxy.queryApps().map(_.keySet.toString())
+          appDbProxy.queryApps().map(r => Apps(r.keySet))
         }
       }
     } ~
@@ -87,7 +89,7 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor wi
             case AppDb.Messages.QueryInstance.Success(meta, data) =>
               HttpResponse(200, entity=Instance(appId, instanceGuid, meta.lastUpdated, data).toJson.toString())
             case AppDb.Messages.QueryInstance.NotExists() =>
-              HttpResponse(404, entity="instance not found")
+              HttpResponse(404, entity=FailureRes("instance not found").toJson.toString())
           })
         }
       } ~
@@ -95,7 +97,7 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor wi
         entity(as[String]) { data =>
           log.info(s"putting instance $appId::$instanceGuid")
           appDbProxy.updateInstance(appId, instanceGuid, data)
-          complete(SuccessRes(s"updated $appId::$instanceGuid with $data"))
+          complete(SuccessRes(s"updated $appId::$instanceGuid"))
         }
       } ~
       patch {
