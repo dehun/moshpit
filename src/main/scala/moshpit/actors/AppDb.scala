@@ -138,15 +138,17 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
           } else if (theirMeta.vclock.isSubclockOf(ourMeta.vclock)) {
             log.info(s"ignoring update of $appId::$instanceGuid as ours is more advance")
           } else { // conflict, newest wins
-            val newMeta = InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock),
-              DateTime.now(), wasDeleted = false, instanceTtlSec, appId)
-            if (theirMeta.lastUpdated.compareTo(ourMeta.lastUpdated) > 0) {
-              log.info(s"got conflicting entries for $appId::$instanceGuid, and their is newer")
-              instances = instances.updated(instanceGuid, (newMeta, theirData))
+            val (newMeta, newData) =
+              if (theirMeta.lastUpdated.compareTo(ourMeta.lastUpdated) > 0) {
+                log.debug(s"got conflicting entries for $appId::$instanceGuid, and their is newer")
+                (InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock),
+                  DateTime.now(), wasDeleted = theirMeta.wasDeleted, instanceTtlSec, appId), theirData)
             } else {
-              log.info(s"got conflicting entries for $appId::$instanceGuid, and our is newer")
-              instances = instances.updated(instanceGuid, (newMeta, ourData))
+                log.debug(s"got conflicting entries for $appId::$instanceGuid, and our is newer")
+                (InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock),
+                DateTime.now(), wasDeleted = ourMeta.wasDeleted, instanceTtlSec, appId), ourData)
             }
+            instances = instances.updated(instanceGuid, (newMeta, theirData))
           }
       }
 
@@ -172,7 +174,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       sender() ! Messages.QueryRootHash.Response(rootHash)
 
     case Messages.QueryApps.Request() =>
-      log.info("querying apps")
+      log.debug("querying apps")
       val appHashes = apps.map({case (appId, instancesGuids) => {
         val appIntsances = instancesGuids.toList.sorted.map(instances.apply(_))
         log.info("{} {}", appId, appIntsances.toString().sha1.hash)
@@ -181,12 +183,14 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       sender ! Messages.QueryApps.Response(appHashes)
 
     case Messages.QueryApp.Request(appId, stripped) =>
+      log.debug(s"querying $appId, stripped=$stripped")
       val appIntsances = apps.getOrElse(appId, Set.empty)
           .filterNot(guid => stripped && instances(guid)._1.isDead())
           .map(guid => (guid, instances(guid)._1.vclock))
       sender ! Messages.QueryApp.Response(appIntsances.toMap)
 
     case Messages.QueryFullApp.Request(appId, stripped) =>
+      log.debug(s"querying full $appId, stripped=$stripped")
       val appIntsances = apps.getOrElse(appId, Set.empty)
         .filterNot(guid => stripped && instances(guid)._1.isDead())
         .map(guid => (guid, instances(guid))).toMap
@@ -198,7 +202,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
           log.warning(s"queried non existing or dead instance $appId::$instanceGuid")
           sender() ! Messages.QueryInstance.NotExists()
         case Some((meta, data)) =>
-          log.info(s"successfully queried instance $appId::$instanceGuid")
+          log.debug(s"successfully queried instance $appId::$instanceGuid")
           sender() ! Messages.QueryInstance.Success(meta, data)
       }
 
