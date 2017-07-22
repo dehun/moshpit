@@ -40,7 +40,7 @@ class AppDbProxy(appDb:ActorRef) {
   def pingInstance(appId:String, instanceGuid:String):Future[Messages.PingInstance.Response] =
     ask(appDb, Messages.PingInstance.Request(appId, instanceGuid)).mapTo[Messages.PingInstance.Response]
   def syncInstance(appId:String, instanceGuid:String, meta:InstanceMetaInfo, data:String):Unit =
-    appDb ! Messages.SyncInstance(appId, instanceGuid, meta, data)
+    appDb ! Messages.SyncInstance(instanceGuid, meta, data)
   def deleteInstance(appId:String, instanceGuid:String):Future[Messages.DeleteInstance.Response] =
     ask(appDb, Messages.DeleteInstance.Request(appId, instanceGuid)).mapTo[Messages.DeleteInstance.Response]
 }
@@ -51,7 +51,7 @@ object AppDb {
 
   object Messages {
     case class UpdateInstance(appId:String, instanceGuid:String, instanceData:String)
-    case class SyncInstance(appId:String, instanceGuid:String, meta:InstanceMetaInfo, data:String)
+    case class SyncInstance(instanceGuid:String, meta:InstanceMetaInfo, data:String)
     object PingInstance {
       case class Request(appId: String, instanceGuid: String)
       trait Response
@@ -103,7 +103,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
   private val log =  Logging(context.system, this)
 
   private var apps = Map.empty[String, Set[String]] // appId -> Set[InstanceGuid]
-  private var instances = Map.empty[String, (InstanceMetaInfo, String)] // instanceGuid -> (metainfo, data)
+  private var instances = Map.empty[(String, String), (InstanceMetaInfo, String)] // instanceGuid -> (metainfo, data)
 
   import AppDb._
   import context.dispatcher
@@ -112,48 +112,52 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
 
   override def receive: Receive = {
     case Messages.UpdateInstance(appId:String, instanceGuid:String, instanceData:String) =>
-      instances.get(instanceGuid).filter(_._1.appId == appId) match {
+      instances.get((appId, instanceGuid)) match {
         case Some((meta, _)) =>
           log.info(s"updating old instance $appId::$instanceGuid")
           val newMetaInfo = meta.update(ourGuid, DateTime.now())
-          instances = instances.updated(instanceGuid, (newMetaInfo, instanceData))
+          instances = instances.updated((appId, instanceGuid), (newMetaInfo, instanceData))
+          apps = apps.updated(appId, apps.get(appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
+
         case None =>
           log.info(s"registering new instance $appId::$instanceGuid")
           apps = apps.updated(appId, apps.get(appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
           val newMetaInfo = InstanceMetaInfo(VClock.empty.update(ourGuid), DateTime.now(),
             wasDeleted = false, instanceTtlSec, appId)
-          instances = instances.updated(instanceGuid, (newMetaInfo, instanceData))
+          instances = instances.updated((appId, instanceGuid), (newMetaInfo, instanceData))
       }
 
-    case Messages.SyncInstance(appId, instanceGuid, theirMeta, theirData) =>
-      instances.get(instanceGuid) match {
+    case Messages.SyncInstance(instanceGuid, theirMeta, theirData) =>
+      instances.get((theirMeta.appId, instanceGuid)) match {
         case None =>
-          log.info(s"obtained new instance $appId::$instanceGuid")
-          instances = instances.updated(instanceGuid, (theirMeta, theirData))
-          apps = apps.updated(appId, apps.get(appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
+          log.info(s"obtained new instance ${theirMeta.appId}::$instanceGuid")
+          instances = instances.updated((theirMeta.appId, instanceGuid), (theirMeta, theirData))
+          apps = apps.updated(theirMeta.appId, apps.get(theirMeta.appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
         case Some((ourMeta, ourData)) =>
           if (ourMeta.vclock.isSubclockOf(theirMeta.vclock)) {
-            log.info(s"substituting ours $appId::$instanceGuid with theirs, as ours is part of timeline and is before")
-            instances = instances.updated(instanceGuid, (theirMeta, theirData))
+            assert (ourMeta.appId == theirMeta.appId)
+            log.info(s"substituting ours ${ourMeta.appId}::$instanceGuid with theirs ${theirMeta.appId}::$instanceGuid , as ours is part of timeline and is before")
+            instances = instances.updated((theirMeta.appId, instanceGuid), (theirMeta, theirData))
           } else if (theirMeta.vclock.isSubclockOf(ourMeta.vclock)) {
-            log.info(s"ignoring update of $appId::$instanceGuid as ours is more advance")
+            log.info(s"ignoring update of ${theirMeta.appId}::$instanceGuid as ours is more advance")
           } else { // conflict, newest wins
             val (newMeta, newData) =
               if (theirMeta.lastUpdated.compareTo(ourMeta.lastUpdated) > 0) {
-                log.debug(s"got conflicting entries for $appId::$instanceGuid, and their is newer")
+                log.debug(s"got conflicting entries for ${theirMeta.appId}::$instanceGuid, and their is newer")
                 (InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock),
-                  DateTime.now(), wasDeleted = theirMeta.wasDeleted, instanceTtlSec, appId), theirData)
+                  DateTime.now(), wasDeleted = theirMeta.wasDeleted, instanceTtlSec, theirMeta.appId), theirData)
             } else {
-                log.debug(s"got conflicting entries for $appId::$instanceGuid, and our is newer")
+                log.debug(s"got conflicting entries for ${theirMeta.appId}::$instanceGuid, and our is newer")
                 (InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock),
-                DateTime.now(), wasDeleted = ourMeta.wasDeleted, instanceTtlSec, appId), ourData)
+                DateTime.now(), wasDeleted = ourMeta.wasDeleted, instanceTtlSec, ourMeta.appId), ourData)
             }
-            instances = instances.updated(instanceGuid, (newMeta, theirData))
+
+            instances = instances.updated((theirMeta.appId, instanceGuid), (newMeta, theirData))
           }
       }
 
     case Messages.PingInstance.Request(appId, instanceGuid) =>
-      instances.get(instanceGuid) match {
+      instances.get((appId, instanceGuid)) match {
         case None =>
           log.warning(s"ping of non existing instance $appId::$instanceGuid")
           sender() ! Messages.PingInstance.NotExists()
@@ -161,7 +165,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
           if (!meta.wasDeleted) {
             log.info(s"pinging instance $appId:$instanceGuid")
             val newMeta = meta.update(ourGuid, DateTime.now())
-            instances = instances.updated(instanceGuid, (newMeta, data))
+            instances = instances.updated((appId, instanceGuid), (newMeta, data))
             sender() ! Messages.PingInstance.Success()
           } else {
             log.warning(s"ping of dead instance $appId::$instanceGuid")
@@ -176,28 +180,28 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
     case Messages.QueryApps.Request() =>
       log.debug("querying apps")
       val appHashes = apps.map({case (appId, instancesGuids) => {
-        val appIntsances = instancesGuids.toList.sorted.map(instances.apply(_))
+        val appIntsances = instancesGuids.toList.sorted.map(guid => instances((appId, guid)))
         log.info("{} {}", appId, appIntsances.toString().sha1.hash)
         (appId, appIntsances.toString().sha1.hash)
       }})
       sender ! Messages.QueryApps.Response(appHashes)
 
     case Messages.QueryApp.Request(appId, stripped) =>
-      log.debug(s"querying $appId, stripped=$stripped")
+      log.info(s"querying $appId, stripped=$stripped")
       val appIntsances = apps.getOrElse(appId, Set.empty)
-          .filterNot(guid => stripped && instances(guid)._1.isDead())
-          .map(guid => (guid, instances(guid)._1.vclock))
+          .filterNot(guid => stripped && instances((appId, guid))._1.isDead())
+          .map(guid => (guid, instances((appId, guid))._1.vclock))
       sender ! Messages.QueryApp.Response(appIntsances.toMap)
 
     case Messages.QueryFullApp.Request(appId, stripped) =>
       log.debug(s"querying full $appId, stripped=$stripped")
       val appIntsances = apps.getOrElse(appId, Set.empty)
-        .filterNot(guid => stripped && instances(guid)._1.isDead())
-        .map(guid => (guid, instances(guid))).toMap
+        .filterNot(guid => stripped && instances((appId, guid))._1.isDead())
+        .map(guid => (guid, instances((appId, guid)))).toMap
       sender ! Messages.QueryFullApp.Response(appIntsances)
 
     case Messages.QueryInstance.Request(appId, instanceGuid) =>
-      instances.get(instanceGuid).filter(!_._1.isDead()).filter(_._1.appId==appId) match {
+      instances.get((appId, instanceGuid)).filter(!_._1.isDead()).filter(_._1.appId==appId) match {
         case None =>
           log.warning(s"queried non existing or dead instance $appId::$instanceGuid")
           sender() ! Messages.QueryInstance.NotExists()
@@ -209,7 +213,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
     case Messages.DeleteInstance.Request(appId, instanceGuid) =>
       if (apps.get(appId).exists(_.contains(instanceGuid))) {
         log.info(s"deleting $appId::$instanceGuid")
-        instances -= instanceGuid
+        instances -= ((appId, instanceGuid))
         apps = apps.updated(appId, apps.get(appId).map(is => is - instanceGuid).getOrElse(Set.empty))
         sender() ! Messages.DeleteInstance.Success()
       } else {
@@ -223,10 +227,10 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
         .filter({ case (guid, (meta, _)) =>
           meta.isDead() && meta.lastUpdated.compareTo(DateTime.now().minus(gcInstanceTtlSec*1000)) == -1 })
         .keys.toSet
-      instancesToClear.map(guid => {
-        instances = instances -- instancesToClear
-        apps = apps.map({case (app, appInstances) => (app, appInstances.filterNot(i => instancesToClear.contains(i)))})
+      instancesToClear.foreach({case (appId, guid) =>
+        apps = apps.updated(appId, apps.get(appId).map(_ - guid).getOrElse(Set.empty))
       })
+      instances = instances -- instancesToClear
 
     case _ =>
       log.error("unknown message received, failing")
