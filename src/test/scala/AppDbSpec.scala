@@ -53,8 +53,8 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       }
     }
 
-    val maxApps = 4
-    val maxInstancesPerApp = 4
+    val maxApps = 6
+    val maxInstancesPerApp = 6
 
     "query apps" in {
       forAll { (k: Int) =>
@@ -235,11 +235,11 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       }
     }
 
-    "deleted instance still can not be queried if stripped is true" in {
+    "deleted instance still can be queried if stripped is true" in {
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) { case AppDb.Messages.DeleteInstance.Success() => }
-      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) {
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = true)) {
         case (AppDb.Messages.QueryInstance.NotExists()) =>
       }
     }
