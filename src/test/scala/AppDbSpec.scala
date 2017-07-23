@@ -2,6 +2,7 @@ import java.util.UUID
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActors, TestKit}
+import com.roundeights.hasher.Hash
 import moshpit.{VClock, actors}
 import moshpit.actors.{AppDb, AppDbProxy, InstanceMetaInfo}
 import org.joda.time.DateTime
@@ -25,7 +26,7 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
     "update new instance" in {
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("so_random_guid", 60, 60, 1200)))
       appDbProxy.updateInstance("so_app_id", "so_instance_guid", "wow")
-      whenReady(appDbProxy.queryInstance("so_app_id", "so_instance_guid", stripped=false)) {
+      whenReady(appDbProxy.queryInstance("so_app_id", "so_instance_guid", stripped = false)) {
         case AppDb.Messages.QueryInstance.Success(meta, data) =>
           inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
             appId shouldEqual "so_app_id"
@@ -143,12 +144,12 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
-      , "new wow")
-      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
-        data should === ("new wow")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
+        , "new wow")
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        data should ===("new wow")
         inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
-          vclock should === (VClock(Map("1" -> 1, "2" -> 1)))
+          vclock should ===(VClock(Map("1" -> 1, "2" -> 1)))
           wasDeleted shouldBe false
           instanceTtlSec shouldEqual 60
           appId shouldEqual "soapp"
@@ -160,18 +161,18 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
         , "new wow")
-      whenReady(appDbProxy.pingInstance("soapp", "soinstance")) {case AppDb.Messages.PingInstance.Success() => }
+      whenReady(appDbProxy.pingInstance("soapp", "soinstance")) { case AppDb.Messages.PingInstance.Success() => }
 
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
         , "absolutely barbaic")
 
-      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
-        data should === ("new wow")
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        data should ===("new wow")
         inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
-          vclock should === (VClock(Map("1" -> 2, "2" -> 1)))
+          vclock should ===(VClock(Map("1" -> 2, "2" -> 1)))
           wasDeleted shouldBe false
           instanceTtlSec shouldEqual 60
           appId shouldEqual "soapp"
@@ -183,18 +184,18 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
         , "new wow")
-      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) {case AppDb.Messages.DeleteInstance.Success() => }
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) { case AppDb.Messages.DeleteInstance.Success() => }
 
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
         , "absolutely barbaic")
 
-      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
-        data should === ("new wow")
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        data should ===("new wow")
         inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
-          vclock should === (VClock(Map("1" -> 2, "2" -> 1)))
+          vclock should ===(VClock(Map("1" -> 2, "2" -> 1)))
           wasDeleted shouldBe true
           instanceTtlSec shouldEqual 60
           appId shouldEqual "soapp"
@@ -206,18 +207,18 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
         , "new wow")
-      whenReady(appDbProxy.pingInstance("soapp", "soinstance")) {case AppDb.Messages.PingInstance.Success() => } // bump first one
+      whenReady(appDbProxy.pingInstance("soapp", "soinstance")) { case AppDb.Messages.PingInstance.Success() => } // bump first one
 
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 2)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 2)), DateTime.now(), wasDeleted = false, 60, "soapp")
         , "i am the overrider")
 
-      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
-        data should === ("i am the overrider")
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        data should ===("i am the overrider")
         inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
-          vclock should === (VClock(Map("1" -> 2, "2" -> 2)))
+          vclock should ===(VClock(Map("1" -> 2, "2" -> 2)))
           wasDeleted shouldBe false
           instanceTtlSec shouldEqual 60
           appId shouldEqual "soapp"
@@ -228,27 +229,110 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
     "deleted instance still can be queried if stripped is false" in {
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
-      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) {case AppDb.Messages.DeleteInstance.Success() => }
-      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) {
-        case (AppDb.Messages.QueryInstance.Success(meta, data)) => }
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) { case AppDb.Messages.DeleteInstance.Success() => }
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) {
+        case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+      }
     }
 
     "deleted instance still can not be queried if stripped is true" in {
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
-      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) {case AppDb.Messages.DeleteInstance.Success() => }
-      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) {
-        case (AppDb.Messages.QueryInstance.NotExists()) => }
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) { case AppDb.Messages.DeleteInstance.Success() => }
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) {
+        case (AppDb.Messages.QueryInstance.NotExists()) =>
+      }
     }
 
-    "after gc run deleted instances can not be queried" in {
+    "after gc run deleted instances which are gc-ttled can not be queried" in {
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 0, 1200))) // 0 ttl for gc
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
-      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) {case AppDb.Messages.DeleteInstance.Success() => }
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) { case AppDb.Messages.DeleteInstance.Success() => }
       appDbProxy.forceGc()
       eventually {
         whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) {
           case (AppDb.Messages.QueryInstance.NotExists()) =>
+        }
+      }
+    }
+
+    "after gc run deleted instances that are not gc-ttled can not queried" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
+      appDbProxy.updateInstance("soapp", "soinstance", "wow")
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) { case AppDb.Messages.DeleteInstance.Success() => }
+      appDbProxy.forceGc()
+      eventually {
+        whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) {
+          case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        }
+      }
+    }
+
+    "root hash for empty db is ok" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
+      whenReady(appDbProxy.queryRootHash()) { hash =>
+      }
+    }
+
+    "hashing works for root and for apps" in {
+      forAll { (k: Int) =>
+        val nApps = k.abs % maxApps
+        val nInstances = k.abs % maxInstancesPerApp
+        val apps = (0 until nApps).map(_.toString)
+        val instances = (0 until nInstances).map(id => UUID.randomUUID().toString)
+        var registered = Set.empty[(String, String)]
+        val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("so_random_guid", 60, 60, 1200)))
+
+        var lastRootHash = {
+          whenReady(appDbProxy.queryRootHash()) { hash => hash }
+        }
+        var lastAppsHashes = Map.empty[String, Hash]
+
+        for {appId <- apps
+             instanceId <- instances} {
+          appDbProxy.updateInstance(appId, instanceId, s"data of $appId::$instanceId")
+          registered += ((appId, instanceId))
+
+          val newRootHash = { whenReady(appDbProxy.queryRootHash()) { hash => hash } }
+          newRootHash should !==(lastRootHash)
+          lastRootHash = newRootHash
+
+          val newAppsHashes = { whenReady(appDbProxy.queryApps()) {result => result} }
+          newAppsHashes should !== (lastAppsHashes)
+          Some(newAppsHashes(appId)) should !== (lastAppsHashes.get(appId))
+          lastAppsHashes = newAppsHashes
+        }
+
+        // ping hashing works
+        for {r <- registered} {
+          val (appId, instanceId) = r
+          whenReady(appDbProxy.pingInstance(appId, instanceId)) { result =>
+            result should ===(AppDb.Messages.PingInstance.Success())
+          }
+
+          val newRootHash = { whenReady(appDbProxy.queryRootHash()) { hash => hash } }
+          newRootHash should !==(lastRootHash)
+          lastRootHash = newRootHash
+
+          val newAppsHashes = { whenReady(appDbProxy.queryApps()) {result => result} }
+          newAppsHashes should !== (lastAppsHashes)
+          Some(newAppsHashes(appId)) should !== (lastAppsHashes.get(appId))
+          lastAppsHashes = newAppsHashes
+        }
+
+        for {r <- registered} {
+          val (appId, instanceId) = r
+          whenReady(appDbProxy.deleteInstance(appId, instanceId)) { result =>
+            result should ===(AppDb.Messages.DeleteInstance.Success())
+          }
+          val newRootHash = { whenReady(appDbProxy.queryRootHash()) { hash => hash } }
+          newRootHash should !==(lastRootHash)
+          lastRootHash = newRootHash
+
+          val newAppsHashes = { whenReady(appDbProxy.queryApps()) {result => result} }
+          newAppsHashes should !== (lastAppsHashes)
+          Some(newAppsHashes(appId)) should !== (lastAppsHashes.get(appId))
+          lastAppsHashes = newAppsHashes
         }
       }
     }
