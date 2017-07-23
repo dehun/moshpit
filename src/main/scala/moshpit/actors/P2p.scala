@@ -72,7 +72,7 @@ class P2p(ourGuid:String, appDbRef:ActorRef, seeds:Seq[String]) extends Actor {
       val connectedPaths = peers.values.map(_.path).toSet + ourPath
       for {
         instanceGuids <- appDbProxy.queryApp("moshpit", stripped = false).map(_.keySet)
-        instances <- instanceGuids.map(guid => appDbProxy.queryInstance("moshpit", guid)).toList.sequenceU
+        instances <- instanceGuids.map(guid => appDbProxy.queryInstance("moshpit", guid, stripped=false)).toList.sequenceU
       } {
         val knownPaths = instances.filter(_.isInstanceOf[AppDb.Messages.QueryInstance.Success])
           .map({case AppDb.Messages.QueryInstance.Success(_, data) => ActorPath.fromString(data)}).toSet ++

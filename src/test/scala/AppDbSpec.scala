@@ -4,7 +4,8 @@ import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActors, TestKit}
 import moshpit.{VClock, actors}
 import moshpit.actors.{AppDb, AppDbProxy, InstanceMetaInfo}
-import org.scalatest.concurrent.{IntegrationPatience, PatienceConfiguration, ScalaFutures}
+import org.joda.time.DateTime
+import org.scalatest.concurrent.{Eventually, IntegrationPatience, PatienceConfiguration, ScalaFutures}
 import org.scalatest.{BeforeAndAfterAll, Inside, Matchers, WordSpecLike}
 import org.scalatest.Matchers._
 
@@ -13,9 +14,10 @@ import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.time.{Milliseconds, Seconds, Span}
 
 
-class AppDbSpec() extends TestKit(ActorSystem("appDbTest")) with ImplicitSender
+class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
+  with ImplicitSender
   with WordSpecLike with Matchers with BeforeAndAfterAll with ScalaFutures with Inside with GeneratorDrivenPropertyChecks
-  with IntegrationPatience {
+  with IntegrationPatience with Eventually {
 
   override def afterAll(): Unit = TestKit.shutdownActorSystem(system)
 
@@ -23,7 +25,7 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest")) with ImplicitSender
     "update new instance" in {
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("so_random_guid", 60, 60, 1200)))
       appDbProxy.updateInstance("so_app_id", "so_instance_guid", "wow")
-      whenReady(appDbProxy.queryInstance("so_app_id", "so_instance_guid")) {
+      whenReady(appDbProxy.queryInstance("so_app_id", "so_instance_guid", stripped=false)) {
         case AppDb.Messages.QueryInstance.Success(meta, data) =>
           inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
             appId shouldEqual "so_app_id"
@@ -133,6 +135,120 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest")) with ImplicitSender
           whenReady(appDbProxy.queryApp(appId, stripped = true)) { result =>
             result should ===(Map.empty)
           }
+        }
+      }
+    }
+
+    "syncs instance that is newer (same timeline)" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
+      appDbProxy.updateInstance("soapp", "soinstance", "wow")
+      appDbProxy.syncInstance("soinstance",
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+      , "new wow")
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        data should === ("new wow")
+        inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
+          vclock should === (VClock(Map("1" -> 1, "2" -> 1)))
+          wasDeleted shouldBe false
+          instanceTtlSec shouldEqual 60
+          appId shouldEqual "soapp"
+        }
+      }
+    }
+
+    "syncs instance that is older (same timeline)" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
+      appDbProxy.updateInstance("soapp", "soinstance", "wow")
+      appDbProxy.syncInstance("soinstance",
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        , "new wow")
+      whenReady(appDbProxy.pingInstance("soapp", "soinstance")) {case AppDb.Messages.PingInstance.Success() => }
+
+      appDbProxy.syncInstance("soinstance",
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        , "absolutely barbaic")
+
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        data should === ("new wow")
+        inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
+          vclock should === (VClock(Map("1" -> 2, "2" -> 1)))
+          wasDeleted shouldBe false
+          instanceTtlSec shouldEqual 60
+          appId shouldEqual "soapp"
+        }
+      }
+    }
+
+    "syncs instance that is older and deleted(same timeline)" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
+      appDbProxy.updateInstance("soapp", "soinstance", "wow")
+      appDbProxy.syncInstance("soinstance",
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        , "new wow")
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) {case AppDb.Messages.DeleteInstance.Success() => }
+
+      appDbProxy.syncInstance("soinstance",
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        , "absolutely barbaic")
+
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        data should === ("new wow")
+        inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
+          vclock should === (VClock(Map("1" -> 2, "2" -> 1)))
+          wasDeleted shouldBe true
+          instanceTtlSec shouldEqual 60
+          appId shouldEqual "soapp"
+        }
+      }
+    }
+
+    "syncs instance that is conflicting timeline" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
+      appDbProxy.updateInstance("soapp", "soinstance", "wow")
+      appDbProxy.syncInstance("soinstance",
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        , "new wow")
+      whenReady(appDbProxy.pingInstance("soapp", "soinstance")) {case AppDb.Messages.PingInstance.Success() => } // bump first one
+
+      appDbProxy.syncInstance("soinstance",
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 2)), DateTime.now(), wasDeleted=false, 60, "soapp")
+        , "i am the overrider")
+
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
+        data should === ("i am the overrider")
+        inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
+          vclock should === (VClock(Map("1" -> 2, "2" -> 2)))
+          wasDeleted shouldBe false
+          instanceTtlSec shouldEqual 60
+          appId shouldEqual "soapp"
+        }
+      }
+    }
+
+    "deleted instance still can be queried if stripped is false" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
+      appDbProxy.updateInstance("soapp", "soinstance", "wow")
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) {case AppDb.Messages.DeleteInstance.Success() => }
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) {
+        case (AppDb.Messages.QueryInstance.Success(meta, data)) => }
+    }
+
+    "deleted instance still can not be queried if stripped is true" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
+      appDbProxy.updateInstance("soapp", "soinstance", "wow")
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) {case AppDb.Messages.DeleteInstance.Success() => }
+      whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped=false)) {
+        case (AppDb.Messages.QueryInstance.NotExists()) => }
+    }
+
+    "after gc run deleted instances can not be queried" in {
+      val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 0, 1200))) // 0 ttl for gc
+      appDbProxy.updateInstance("soapp", "soinstance", "wow")
+      whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) {case AppDb.Messages.DeleteInstance.Success() => }
+      appDbProxy.forceGc()
+      eventually {
+        whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) {
+          case (AppDb.Messages.QueryInstance.NotExists()) =>
         }
       }
     }

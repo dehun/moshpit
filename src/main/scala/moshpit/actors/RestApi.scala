@@ -100,7 +100,7 @@ class RestApi(bindHost:String, bindPort:Int, appDbRef:ActorRef) extends Actor wi
       get {
         log.info(s"getting instance $appId::$instanceGuid")
         complete {
-          appDbProxy.queryInstance(appId, instanceGuid).map({
+          appDbProxy.queryInstance(appId, instanceGuid, stripped=true).map({
             case AppDb.Messages.QueryInstance.Success(meta, data) =>
               HttpResponse(200, entity=Instance(appId, instanceGuid, meta.lastUpdated, data).toJson.toString())
             case AppDb.Messages.QueryInstance.NotExists() =>

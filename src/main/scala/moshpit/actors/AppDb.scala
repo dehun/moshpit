@@ -8,6 +8,7 @@ import com.roundeights.hasher.Hash
 import com.roundeights.hasher.Implicits._
 import moshpit.VClock
 import com.github.nscala_time.time.Imports.DateTime
+import moshpit.actors.AppDb.Tasks
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -33,16 +34,18 @@ class AppDbProxy(appDb:ActorRef) {
     ask(appDb, Messages.QueryApp.Request(appId, stripped)).mapTo[Messages.QueryApp.Response].map(_.instances)
   def queryFullApp(appId:String, stripped:Boolean):Future[Map[String, (InstanceMetaInfo, String)]] =
     ask(appDb, Messages.QueryFullApp.Request(appId, stripped)).mapTo[Messages.QueryFullApp.Response].map(_.instances)
-  def queryInstance(appId:String, instanceGuid:String):Future[Messages.QueryInstance.Response] =
-    ask(appDb, Messages.QueryInstance.Request(appId, instanceGuid)).mapTo[Messages.QueryInstance.Response]
+  def queryInstance(appId:String, instanceGuid:String, stripped:Boolean):Future[Messages.QueryInstance.Response] =
+    ask(appDb, Messages.QueryInstance.Request(appId, instanceGuid, stripped)).mapTo[Messages.QueryInstance.Response]
   def updateInstance(appId:String, instanceGuid:String, instanceData:String):Unit =
     appDb ! Messages.UpdateInstance(appId, instanceGuid, instanceData)
   def pingInstance(appId:String, instanceGuid:String):Future[Messages.PingInstance.Response] =
     ask(appDb, Messages.PingInstance.Request(appId, instanceGuid)).mapTo[Messages.PingInstance.Response]
-  def syncInstance(appId:String, instanceGuid:String, meta:InstanceMetaInfo, data:String):Unit =
+  def syncInstance(instanceGuid:String, meta:InstanceMetaInfo, data:String):Unit =
     appDb ! Messages.SyncInstance(instanceGuid, meta, data)
   def deleteInstance(appId:String, instanceGuid:String):Future[Messages.DeleteInstance.Response] =
     ask(appDb, Messages.DeleteInstance.Request(appId, instanceGuid)).mapTo[Messages.DeleteInstance.Response]
+  def forceGc() =
+    appDb ! Tasks.RunGc()
 }
 
 object AppDb {
@@ -80,7 +83,7 @@ object AppDb {
     }
 
     object QueryInstance {
-      case class Request(appId: String, instanceGuid: String)
+      case class Request(appId: String, instanceGuid: String, stripped:Boolean)
       trait Response
       case class NotExists() extends Response
       case class Success(metainfo:InstanceMetaInfo, data: String) extends Response
@@ -200,8 +203,8 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
         .map(guid => (guid, instances((appId, guid)))).toMap
       sender ! Messages.QueryFullApp.Response(appIntsances)
 
-    case Messages.QueryInstance.Request(appId, instanceGuid) =>
-      instances.get((appId, instanceGuid)).filter(!_._1.isDead()).filter(_._1.appId==appId) match {
+    case Messages.QueryInstance.Request(appId, instanceGuid, stripped) =>
+      instances.get((appId, instanceGuid)).filterNot({case (meta, data) => stripped && meta.isDead() }) match {
         case None =>
           log.warning(s"queried non existing or dead instance $appId::$instanceGuid")
           sender() ! Messages.QueryInstance.NotExists()
@@ -211,14 +214,14 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       }
 
     case Messages.DeleteInstance.Request(appId, instanceGuid) =>
-      if (apps.get(appId).exists(_.contains(instanceGuid))) {
-        log.info(s"deleting $appId::$instanceGuid")
-        instances -= ((appId, instanceGuid))
-        apps = apps.updated(appId, apps.get(appId).map(is => is - instanceGuid).getOrElse(Set.empty))
-        sender() ! Messages.DeleteInstance.Success()
-      } else {
-        log.info(s"deleting  error, not found $appId::$instanceGuid")
-        sender() ! Messages.DeleteInstance.NotFound()
+      instances.get((appId, instanceGuid)) match {
+        case Some((meta, data)) =>
+          log.info(s"deleting $appId::$instanceGuid")
+          instances = instances.updated((appId, instanceGuid), (meta.delete(ourGuid, DateTime.now()), data))
+          sender() ! Messages.DeleteInstance.Success()
+        case None =>
+          log.info(s"deleting  error, not found $appId::$instanceGuid")
+          sender() ! Messages.DeleteInstance.NotFound()
       }
 
     case Tasks.RunGc() =>

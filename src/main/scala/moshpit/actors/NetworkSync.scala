@@ -23,7 +23,7 @@ object NetworkSync {
     case class RequestInstancesMeta(appIds:Set[String]) extends P2p.P2pMessagePayload
     case class PushInstancesMeta(apps:Map[String, Map[String, VClock]]) extends P2p.P2pMessagePayload
     case class RequestFullInstance(appId:String, instanceGuid:String) extends P2p.P2pMessagePayload
-    case class PushFullInstance(appId:String, instanceGuid:String,
+    case class PushFullInstance(instanceGuid:String,
                                 instanceMetaInfo: InstanceMetaInfo, userData:String) extends P2p.P2pMessagePayload
   }
 
@@ -100,16 +100,16 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) extends 
 
       case Messages.RequestFullInstance(appId, instanceGuid) =>
         log.info(s"got request for full instance $appId::$instanceGuid")
-        appDbProxy.queryInstance(appId, instanceGuid).andThen({
+        appDbProxy.queryInstance(appId, instanceGuid, stripped = false).andThen({
           case Success(AppDb.Messages.QueryInstance.Success(meta, data)) =>
-            p2p ! P2p.Messages.Send(sender, Messages.PushFullInstance(appId, instanceGuid, meta, data))
+            p2p ! P2p.Messages.Send(sender, Messages.PushFullInstance(instanceGuid, meta, data))
           case Success(AppDb.Messages.QueryInstance.NotExists()) =>
             log.warning("requested non existing instance, strange")
         })
 
-      case Messages.PushFullInstance(appId, instanceGuid, meta, data) =>
-        log.info(s"got full instance for $appId and $instanceGuid with meta $meta")
-        appDbProxy.syncInstance(appId, instanceGuid, meta, data)
+      case Messages.PushFullInstance(instanceGuid, meta, data) =>
+        log.info(s"got full instance for ${meta.appId} and $instanceGuid with meta $meta")
+        appDbProxy.syncInstance(instanceGuid, meta, data)
     }
   }
 }
