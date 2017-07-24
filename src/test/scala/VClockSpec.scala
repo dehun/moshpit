@@ -23,5 +23,19 @@ class VClockSpec extends  Matchers with WordSpecLike  with GeneratorDrivenProper
         vc.isSubclockOf(vc.update("1")) shouldBe true
       }
     }
+
+    "updating works" in {
+      forAll(genClock, Gen.choose(0, 100)) { (vc:VClock, k:Int) =>
+        val requester = (if (vc.stamps.nonEmpty) k % vc.stamps.size else 1).toString
+        val updated = vc.update(requester)
+        updated.stamps.get(requester).exists(v => v > vc.stamps.getOrElse(requester, 0)) shouldBe true
+      }
+    }
+
+    "clock is subclock of self" in {
+      forAll(genClock) { (vc:VClock) =>
+        vc.isSubclockOf(vc) shouldBe true
+      }
+    }
   }
 }
