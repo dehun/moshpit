@@ -169,9 +169,20 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
             rp2p ! P2pMock.Messages.ExtraSubscriber(nguid, np2p)
           }
         }
-        //
+        // initialize reference db
+        val referenceAppDb = system.actorOf(AppDb.props("referenceAppDb", 60, 60, 3200))
+        val referenceDbProxy = new AppDbProxy(referenceAppDb)
 
+        // conduct actions
+        val dbProxies = nss.map({ case (guid, p2p, appDb, ns) => new AppDbProxy(appDb) })
+        for {(action, onDb) <- actions.zip(onDbs)} {
+          action.run(referenceDbProxy)
+          val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb.contains(p._2)).map(_._1)
+          selectedDbProxies.map(p => action.run(p))
+        }
       }
+
+      
     }
 
   }
