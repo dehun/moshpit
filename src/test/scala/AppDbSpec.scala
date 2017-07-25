@@ -218,7 +218,7 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
         data should ===("i am the overrider")
         inside(meta) { case InstanceMetaInfo(vclock, _, wasDeleted, instanceTtlSec, appId) =>
-          vclock should ===(VClock(Map("1" -> 2, "2" -> 2)))
+          vclock should ===(VClock(Map("1" -> 3, "2" -> 2)))
           wasDeleted shouldBe false
           instanceTtlSec shouldEqual 60
           appId shouldEqual "soapp"
