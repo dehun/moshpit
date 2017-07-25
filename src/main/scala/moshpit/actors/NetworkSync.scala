@@ -14,7 +14,8 @@ import scala.concurrent.duration._
 
 
 object NetworkSync {
-  def props(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) = Props(new NetworkSync(ourGuid, seeds, appDbRef))
+  def props(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef, p2pFactory:P2pFactory = RealP2pFactory) =
+    Props(new NetworkSync(ourGuid, seeds, appDbRef, p2pFactory))
 
   object Messages {
     case class AdvertiseRootHash(hash:Hash) extends P2p.P2pMessagePayload
@@ -42,10 +43,11 @@ object NetworkSync {
 // --- instance (full) ----------------->  // full instance with metainfo and userdata
 
 
-class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef) extends Actor {
+class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
+                  p2pFactory: P2pFactory) extends Actor {
   import NetworkSync._
   private val log =  Logging(context.system, this)
-  private val p2p = context.actorOf(P2p.props(ourGuid, appDbRef, seeds), "p2p")
+  private val p2p = p2pFactory.spawnP2p(context, ourGuid, appDbRef, seeds, "p2p")
   val appDbProxy = new AppDbProxy(appDbRef)
   override def preStart(): Unit = p2p ! P2p.Messages.Subscribe(context.self)
   import context.dispatcher

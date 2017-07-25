@@ -1,6 +1,6 @@
 package moshpit.actors
 
-import akka.actor.{Actor, ActorPath, ActorRef, Props, Terminated}
+import akka.actor.{Actor, ActorContext, ActorPath, ActorRef, Props, Terminated}
 import akka.event.Logging
 import akka.pattern.ask
 
@@ -94,4 +94,13 @@ class P2p(ourGuid:String, appDbRef:ActorRef, seeds:Seq[String]) extends Actor {
       }
     case Terminated(ref) => peers.find(_._2 == ref).map(p => peers = peers - p._1)
   }
+}
+
+trait P2pFactory {
+  def spawnP2p(context:ActorContext, ourGuid:String, appDbRef:ActorRef, seeds:Seq[String], actorName:String):ActorRef
+}
+
+object RealP2pFactory extends P2pFactory {
+  override def spawnP2p(context: ActorContext, ourGuid: String, appDbRef: ActorRef, seeds: Seq[String], actorName:String): ActorRef =
+    context.actorOf(P2p.props(ourGuid, appDbRef, seeds), actorName)
 }
