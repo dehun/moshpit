@@ -165,7 +165,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
     case class MultiSyncTestCase(nDbs:Int, actions:List[DbActions.DbAction], onDbs:List[Int])
     lazy val genMultiSyncTestCase = for {
       nDbs <- Gen.choose[Int](2, 6)
-      nActions <- Gen.choose[Int](1, 36)
+      nActions <- Gen.choose[Int](1, 128)
       actions <- Gen.listOfN(nActions, DbActions.gen)
       onDbs <- Gen.listOfN(actions.size, Gen.choose[Int](0, nDbs - 1))
     } yield MultiSyncTestCase(nDbs, actions, onDbs)

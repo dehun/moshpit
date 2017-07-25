@@ -58,7 +58,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
   override def receive: Receive = {
     case Tasks.AdvertiseRootTask() =>
       appDbProxy.queryRootHash().map(ourHash => {
-        log.info("advertising root hash")
+        log.debug("advertising root hash")
         p2p ! P2p.Messages.Broadcast(Messages.AdvertiseRootHash(ourHash))
       })
 
@@ -66,7 +66,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
       case Messages.AdvertiseRootHash(theirHash) =>
         appDbProxy.queryRootHash().map(ourHash => {
           if (ourHash != theirHash) {
-            log.info("root hash mismatch, start sync")
+            log.debug("root hash mismatch, start sync")
             p2p ! P2p.Messages.Send(sender, Messages.RequestApps(theirHash))
           }
         })
@@ -75,7 +75,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         appDbProxy.queryApps().map(apps => {
           appDbProxy.queryRootHash().map(ourHash => {
             if (ourHash == prevHash) {
-              log.info("syncing apps")
+              log.debug("syncing apps")
               p2p ! P2p.Messages.Send(sender, Messages.PushApps(apps))
             }
           })
@@ -87,33 +87,32 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
           val their = theirApps.toSet
           val toSync = their.diff(our) // our stuff that is different will be synced there by that node ///our.union(their).diff(our.intersect(their))
           if (toSync.nonEmpty) {
-            log.info(s"syncing app $toSync")
+            log.debug(s"syncing app $toSync")
             p2p ! P2p.Messages.Send(sender, Messages.RequestInstancesMeta(toSync.map(_._1)))
           }
         })
 
       case Messages.RequestInstancesMeta(appIds) =>
         appIds.map(appId => appDbProxy.queryApp(appId, stripped = false).map(r => (appId, r))).toList.sequenceU.map(res => {
-          log.info(s"sending instances meta ${res.toMap}")
+          log.debug(s"sending instances meta ${res.toMap}")
           p2p ! P2p.Messages.Send(sender, Messages.PushInstancesMeta(res.toMap))
         })
 
       case Messages.PushInstancesMeta(theirApps) =>
-        log.info(s"got pushInstances")
+        log.debug(s"got pushInstances")
         theirApps.keys.foreach(appId => appDbProxy.queryApp(appId, stripped = false).map(ourInstances => {
-          log.info("")
           val theirInstances = theirApps(appId).toSet
           val toSync = theirInstances.diff(ourInstances.toSet)
-          log.info(s"to sync $toSync, ours = ${ourInstances.toSet}, theirs=${theirInstances.toSet}")
+          log.debug(s"to sync $toSync, ours = ${ourInstances.toSet}, theirs=${theirInstances.toSet}")
           toSync//.filterNot(i => ourInstances.get(i._1).exists(v => v.isSubclockOf(i._2))) // if theirs is future of time of ours
             .foreach(s => {
-            log.info(s"requesting full instance $appId::${s._1}")
+            log.debug(s"requesting full instance $appId::${s._1}")
             p2p ! P2p.Messages.Send(sender, Messages.RequestFullInstance(appId, s._1))
           })
         }))
 
       case Messages.RequestFullInstance(appId, instanceGuid) =>
-        log.info(s"got request for full instance $appId::$instanceGuid")
+        log.debug(s"got request for full instance $appId::$instanceGuid")
         appDbProxy.queryInstance(appId, instanceGuid, stripped = false).andThen({
           case Success(AppDb.Messages.QueryInstance.Success(meta, data)) =>
             p2p ! P2p.Messages.Send(sender, Messages.PushFullInstance(instanceGuid, meta, data))
@@ -122,7 +121,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         })
 
       case Messages.PushFullInstance(instanceGuid, meta, data) =>
-        log.info(s"got full instance for ${meta.appId} and $instanceGuid with meta $meta")
+        log.debug(s"got full instance for ${meta.appId} and $instanceGuid with meta $meta")
         appDbProxy.syncInstance(instanceGuid, meta, data)
     }
   }
