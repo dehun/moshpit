@@ -18,6 +18,10 @@ import org.scalacheck.Gen.Choose
 import scala.concurrent.duration._
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.time.{Milliseconds, Seconds, Span}
+import cats._
+import cats.implicits._
+import cats.data._
+
 
 import scala.concurrent.Future
 
@@ -32,20 +36,21 @@ class P2pMock(ourGuid:String) extends Actor {
 
   override def receive: Receive = {
     case P2p.Messages.Send(guid, payload) =>
-      Console.println(s"sending towards $guid")
-      val sendingSubscriber = subscribers.find(_._2 == sender()).get
-      subscribers(guid) ! P2p.NetMessages.Message(sendingSubscriber._1, payload)
+//      Console.println(s"sending towards $guid $payload")
+      //val sendingSubscriber = subscribers.find(_._2 == sender()).get
+      subscribers(guid) ! P2p.NetMessages.Message(ourGuid, payload)
     case P2p.Messages.Broadcast(payload) =>
-      Console.println(s"broadcasting towards everyone")
-      Console.println(s"mock broadcast $payload")
+      //Console.println(s"broadcasting towards everyone")
+//      Console.println(s"$ourGuid mock broadcast $payload")
       val sendingSubscriber = subscribers.find(_._2 == sender()).get
-      subscribers.values.foreach(_ ! P2p.NetMessages.Message(sendingSubscriber._1, payload))
+      subscribers.filter(_._1 != ourGuid).values.foreach(_ ! P2p.NetMessages.Message(sendingSubscriber._1, payload))
     case P2p.Messages.Subscribe(subscriber) =>
       self ! P2pMock.Messages.ExtraSubscriber(ourGuid, subscriber)
     case P2pMock.Messages.ExtraSubscriber(sguid, ref) =>
       subscribers = subscribers.updated(sguid, ref)
     case msg@P2p.NetMessages.Message(snd, payload) =>
-      subscribers(snd) ! msg
+//      Console.println(s"receiving from $snd $payload towards $ourGuid")
+      subscribers(ourGuid) ! msg
   }
 }
 
@@ -66,6 +71,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
 
   def spawnNs() = {
     val guid = UUID.randomUUID().toString
+    Console.println(s"spawning ns with $guid")
     val p2p = system.actorOf(Props(new P2pMock(guid)))
     val appDb = system.actorOf(AppDb.props(guid, 60, 60, 3200))
     val ns = system.actorOf(NetworkSync.props(guid, Seq.empty, appDb, new MockP2pFactory(p2p)))
@@ -88,7 +94,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
       p2p ! P2pMock.Messages.ExtraSubscriber(testerGuid, self)
       val appDbProxy = new AppDbProxy(appDb)
       val reqHash = "wrong".md5.hash
-      p2p ! P2p.Messages.Send(guid, NetworkSync.Messages.AdvertiseRootHash(reqHash))
+      p2p ! P2p.NetMessages.Message(testerGuid, NetworkSync.Messages.AdvertiseRootHash(reqHash))
       expectMsg(P2p.NetMessages.Message(guid, NetworkSync.Messages.RequestApps(reqHash)))
     }
 
@@ -106,7 +112,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
         }
 
         val hash = { whenReady(appDbProxy.queryRootHash()) { hash => hash } }
-        p2p ! P2p.Messages.Send(guid, NetworkSync.Messages.RequestApps(hash))
+        p2p ! P2p.NetMessages.Message(testerGuid, NetworkSync.Messages.RequestApps(hash))
         val appsHashes = { whenReady(appDbProxy.queryApps()) { result => result } }
         expectMsg(P2p.NetMessages.Message(guid, NetworkSync.Messages.PushApps(appsHashes)))
       }
@@ -151,38 +157,51 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
       } yield DeleteInstance(appId, instanceId)
 
 
-      lazy val gens = Seq(genPingInstance, genDeleteInstance, genUpdateAction)
+      lazy val gens = Seq(genPingInstance, genUpdateAction, genDeleteInstance)
       lazy val gen:Gen[DbAction] = for { g <- Gen.oneOf(gens)
                                           r <- g } yield r
     }
 
+    case class MultiSyncTestCase(nDbs:Int, actions:List[DbActions.DbAction], onDbs:List[Int])
+    lazy val genMultiSyncTestCase = for {
+      nDbs <- Gen.choose[Int](2, 6)
+      nActions <- Gen.choose[Int](1, 36)
+      actions <- Gen.listOfN(nActions, DbActions.gen)
+      onDbs <- Gen.listOfN(actions.size, Gen.choose[Int](0, nDbs - 1))
+    } yield MultiSyncTestCase(nDbs, actions, onDbs)
 
     "syncs N databases to the state of independent database" in {
-      forAll(Gen.choose[Int](2, 6), Gen.nonEmptyListOf(DbActions.gen),
-        Gen.infiniteStream(Gen.listOf(Gen.choose[Int](0, 5)))) { (nDbs:Int, actions:List[DbActions.DbAction], onDbs:Stream[List[Int]]) =>
+      forAll(genMultiSyncTestCase) { case MultiSyncTestCase(nDbs, actions, onDbs) =>
         val nss = (1 to nDbs).map(_ => spawnNs()).toSet
         // susscribe to each others p2p
-        for { ns <- nss} {
+        for {ns <- nss} {
           for {rs <- nss - ns} {
             val (nguid, np2p, _, _) = ns
             val (rguid, rp2p, _, _) = rs
             rp2p ! P2pMock.Messages.ExtraSubscriber(nguid, np2p)
           }
         }
-        // initialize reference db
-        val referenceAppDb = system.actorOf(AppDb.props("referenceAppDb", 60, 60, 3200))
-        val referenceDbProxy = new AppDbProxy(referenceAppDb)
 
         // conduct actions
         val dbProxies = nss.map({ case (guid, p2p, appDb, ns) => new AppDbProxy(appDb) })
-        for {(action, onDb) <- actions.zip(onDbs)} {
-          action.run(referenceDbProxy)
-          val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb.contains(p._2)).map(_._1)
+        val awaiters = for {(action, onDb) <- actions.zip(onDbs)} yield {
+          val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb == p._2).map(_._1)
+          Console.println(s"selected $selectedDbProxies with $onDb within ${dbProxies.zipWithIndex}")
           selectedDbProxies.map(p => action.run(p))
         }
-      }
+        for {awaiter <- awaiters.flatten} {
+          Console.println("awaiting actions")
+          whenReady(awaiter) { result => }
+        }
 
-      
+        eventually {
+          val hashes = dbProxies.map(proxy => whenReady(proxy.queryRootHash()) { hash => hash })
+          val referenceHash = hashes.head
+          hashes.toSet shouldEqual Set(referenceHash)
+        }
+
+        Console.println("!!!!!!!!!!!!!!!!!!! successs !!!!!!!!!!!!!")
+      }
     }
 
   }
