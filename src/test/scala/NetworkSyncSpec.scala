@@ -199,6 +199,5 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
         }
       }
     }
-
   }
 }

@@ -147,11 +147,11 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
             val (newMeta, newData) =
               if (theirMeta.lastUpdated.compareTo(ourMeta.lastUpdated) > 0) {
                 log.info(s"got conflicting entries for ${theirMeta.appId}::$instanceGuid, and their is newer")
-                (InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock).update(ourGuid),
+                (InstanceMetaInfo(VClock.resolve(ourGuid, theirMeta.vclock, ourMeta.vclock),
                   DateTime.now(), wasDeleted = theirMeta.wasDeleted, instanceTtlSec, theirMeta.appId), theirData)
             } else {
                 log.info(s"got conflicting entries for ${theirMeta.appId}::$instanceGuid, and our is newer")
-                (InstanceMetaInfo(VClock.resolve(theirMeta.vclock, ourMeta.vclock).update(ourGuid),
+                (InstanceMetaInfo(VClock.resolve(ourGuid, theirMeta.vclock, ourMeta.vclock),
                 DateTime.now(), wasDeleted = ourMeta.wasDeleted, instanceTtlSec, ourMeta.appId), ourData)
             }
 

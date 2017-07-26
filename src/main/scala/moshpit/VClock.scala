@@ -1,13 +1,13 @@
 package moshpit
 
 object VClock {
-  def resolve(lhs: VClock, rhs: VClock):VClock =
+  def resolve(resolverId:String, lhs: VClock, rhs: VClock):VClock =
     if (lhs.isSubclockOf(rhs)) rhs
     else if (rhs.isSubclockOf(lhs)) lhs
     else {
       val newStamps = lhs.stamps.keySet.union(rhs.stamps.keySet).map(k =>
         (k, List(lhs.stamps.get(k), rhs.stamps.get(k)).filter(_.isDefined).map(_.get).max)).toMap
-      new VClock(newStamps)
+      new VClock(newStamps).update(resolverId)
     }
   def empty = new VClock(Map.empty[String, Int])
 }
