@@ -186,11 +186,9 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
         val dbProxies = nss.map({ case (guid, p2p, appDb, ns) => new AppDbProxy(appDb) })
         val awaiters = for {(action, onDb) <- actions.zip(onDbs)} yield {
           val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb == p._2).map(_._1)
-          Console.println(s"selected $selectedDbProxies with $onDb within ${dbProxies.zipWithIndex}")
           selectedDbProxies.map(p => action.run(p))
         }
         for {awaiter <- awaiters.flatten} {
-          Console.println("awaiting actions")
           whenReady(awaiter) { result => }
         }
 
@@ -199,8 +197,6 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
           val referenceHash = hashes.head
           hashes.toSet shouldEqual Set(referenceHash)
         }
-
-        Console.println("!!!!!!!!!!!!!!!!!!! successs !!!!!!!!!!!!!")
       }
     }
 
