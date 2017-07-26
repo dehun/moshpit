@@ -106,8 +106,21 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
           log.debug(s"to sync $toSync, ours = ${ourInstances.toSet}, theirs=${theirInstances.toSet}")
           toSync//.filterNot(i => ourInstances.get(i._1).exists(v => v.isSubclockOf(i._2))) // if theirs is future of time of ours
             .foreach(s => {
-            log.debug(s"requesting full instance $appId::${s._1}")
-            p2p ! P2p.Messages.Send(sender, Messages.RequestFullInstance(appId, s._1))
+            val ourInstanceOpt = ourInstances.get(s._1)
+            if (ourInstanceOpt.exists(ourVc => ourVc.isConflicting(s._2))) {
+              if (sender < ourGuid) {
+                // sender is the resolver, let em have full instance
+                log.debug(s"he $sender is the resolver for $appId, ${s._1}")
+                p2p ! P2p.Messages.Send(sender, Messages.RequestFullInstance(appId, s._1))
+              } else {
+                log.debug(s"we($ourGuid) are the resolver for $appId, ${s._1}")
+              }
+            } else  if (ourInstanceOpt.exists(ourVc => s._2.isSubclockOf(ourVc))) {
+              log.debug(s"do not request full instance, ours is newer $appId::${s._1}")
+            } else {
+              log.debug(s"our instance is older, requesting full instance $appId::${s._1}")
+              p2p ! P2p.Messages.Send(sender, Messages.RequestFullInstance(appId, s._1))
+            }
           })
         }))
 
@@ -123,6 +136,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
       case Messages.PushFullInstance(instanceGuid, meta, data) =>
         log.debug(s"got full instance for ${meta.appId} and $instanceGuid with meta $meta")
         appDbProxy.syncInstance(instanceGuid, meta, data)
+        //self ! Tasks.AdvertiseRootTask()
     }
   }
 }

@@ -17,6 +17,8 @@ case class VClock(stamps: Map[String, Int]) {
     stamps.keySet.subsetOf(of.stamps.keySet) &&
       stamps.keySet.forall(k => stamps(k) <= of.stamps(k))
 
+  def isConflicting(other:VClock):Boolean = !(other.isSubclockOf(this) || this.isSubclockOf(other))
+
   def update(requester:String):VClock = {
     val newStamp = stamps.get(requester).map(_ + 1).getOrElse(1)
     new VClock(stamps.updated(requester, newStamp))

@@ -162,12 +162,12 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
                                           r <- g } yield r
     }
 
-    case class MultiSyncTestCase(nDbs:Int, actions:List[DbActions.DbAction], onDbs:List[Int])
+    case class MultiSyncTestCase(nDbs:Int, actions:List[DbActions.DbAction], onDbs:List[Set[Int]])
     lazy val genMultiSyncTestCase = for {
-      nDbs <- Gen.choose[Int](2, 6)
+      nDbs <- Gen.choose[Int](3, 5)
       nActions <- Gen.choose[Int](1, 128)
       actions <- Gen.listOfN(nActions, DbActions.gen)
-      onDbs <- Gen.listOfN(actions.size, Gen.choose[Int](0, nDbs - 1))
+      onDbs <- Gen.listOfN(actions.size, Gen.nonEmptyListOf[Int](Gen.choose[Int](0, nDbs - 1)).map(_.toSet))
     } yield MultiSyncTestCase(nDbs, actions, onDbs)
 
     "syncs N databases to the state of independent database" in {
@@ -185,8 +185,9 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
         // conduct actions
         val dbProxies = nss.map({ case (guid, p2p, appDb, ns) => new AppDbProxy(appDb) })
         val awaiters = for {(action, onDb) <- actions.zip(onDbs)} yield {
-          val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb == p._2).map(_._1)
+          val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb.toSet.contains(p._2)).map(_._1)
           selectedDbProxies.map(p => action.run(p))
+          //dbProxies.map(p => action.run(p))
         }
         for {awaiter <- awaiters.flatten} {
           whenReady(awaiter) { result => }
@@ -197,6 +198,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
           val referenceHash = hashes.head
           hashes.toSet shouldEqual Set(referenceHash)
         }
+        Console.println("!!!! success !!!!!")
       }
     }
   }

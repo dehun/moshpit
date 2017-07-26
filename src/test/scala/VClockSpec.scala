@@ -38,6 +38,12 @@ class VClockSpec extends  Matchers with WordSpecLike  with GeneratorDrivenProper
       }
     }
 
+    "empty is subclock of everything" in {
+        forAll(genClock) { (vc:VClock) =>
+          VClock.empty.isSubclockOf(vc) shouldBe true
+      }
+    }
+
     "resolution works" in {
       forAll (Gen.nonEmptyListOf(genClock)) { (clocks) =>
         val rvc = clocks.fold(VClock.empty) { (acc, vc) => VClock.resolve("somebody", acc, vc) }
