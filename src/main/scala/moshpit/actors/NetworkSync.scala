@@ -136,7 +136,6 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
       case Messages.PushFullInstance(instanceGuid, meta, data) =>
         log.debug(s"got full instance for ${meta.appId} and $instanceGuid with meta $meta")
         appDbProxy.syncInstance(instanceGuid, meta, data)
-        //self ! Tasks.AdvertiseRootTask()
     }
   }
 }

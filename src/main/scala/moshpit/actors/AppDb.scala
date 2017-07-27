@@ -102,13 +102,24 @@ object AppDb {
   }
 }
 
+class HashedMap[K, V](val assocs:Map[K, V])(implicit cmp:Ordering[K]) {
+  lazy val hash = assocs.toList.sortBy(_._1).toString().sha1.hash
+}
+
+object HashedMap {
+  implicit def map2HashedMap[K, V](m:Map[K, V])(implicit cmp:Ordering[K]):HashedMap[K, V] = new HashedMap(m)
+  implicit def hashedMap2Map[K, V](m:HashedMap[K, V])(implicit cmp:Ordering[K]):Map[K, V] = m.assocs
+}
+
 class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcIntervalSec:Int) extends Actor {
+  import AppDb._
+  import HashedMap._
+
   private val log =  Logging(context.system, this)
 
   private var apps = Map.empty[String, Set[String]] // appId -> Set[InstanceGuid]
-  private var instances = Map.empty[(String, String), (InstanceMetaInfo, String)] // instanceGuid -> (metainfo, data)
+  private var instances = new HashedMap(Map.empty[(String, String), (InstanceMetaInfo, String)]) // instanceGuid -> (metainfo, data)
 
-  import AppDb._
   import context.dispatcher
   context.system.scheduler.schedule(gcIntervalSec.seconds, gcIntervalSec.seconds,
     context.self, Tasks.RunGc())
@@ -177,7 +188,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       }
 
     case Messages.QueryRootHash.Request() =>
-      val rootHash = instances.toList.sortBy(_._1).toString().sha1.hash
+      val rootHash = instances.hash
       sender() ! Messages.QueryRootHash.Response(rootHash)
 
     case Messages.QueryApps.Request() =>

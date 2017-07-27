@@ -21,7 +21,7 @@ import org.scalatest.time.{Milliseconds, Seconds, Span}
 import cats._
 import cats.implicits._
 import cats.data._
-
+import org.scalacheck.Test.Parameters
 
 import scala.concurrent.Future
 
@@ -130,7 +130,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
         }.mapTo[Any]
       }
 
-      lazy val shortRandomId = Gen.listOfN(2, Gen.alphaNumChar).map(_.mkString)
+      lazy val shortRandomId = Gen.listOfN(1, Gen.alphaChar).map(_.mkString)
 
       lazy val genUpdateAction = for {
         appId <- shortRandomId
@@ -157,7 +157,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
       } yield DeleteInstance(appId, instanceId)
 
 
-      lazy val gens = Seq(genPingInstance, genUpdateAction, genDeleteInstance)
+      lazy val gens = Seq(genUpdateAction, genUpdateAction, genPingInstance, genDeleteInstance)
       lazy val gen:Gen[DbAction] = for { g <- Gen.oneOf(gens)
                                           r <- g } yield r
     }
@@ -165,10 +165,11 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
     case class MultiSyncTestCase(nDbs:Int, actions:List[DbActions.DbAction], onDbs:List[Set[Int]])
     lazy val genMultiSyncTestCase = for {
       nDbs <- Gen.choose[Int](3, 5)
-      nActions <- Gen.choose[Int](1, 128)
+      nActions <- Gen.choose[Int](1, 64)
       actions <- Gen.listOfN(nActions, DbActions.gen)
       onDbs <- Gen.listOfN(actions.size, Gen.nonEmptyListOf[Int](Gen.choose[Int](0, nDbs - 1)).map(_.toSet))
     } yield MultiSyncTestCase(nDbs, actions, onDbs)
+
 
     "syncs N databases to the state of independent database" in {
       forAll(genMultiSyncTestCase) { case MultiSyncTestCase(nDbs, actions, onDbs) =>
@@ -185,10 +186,10 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
         // conduct actions
         val dbProxies = nss.map({ case (guid, p2p, appDb, ns) => new AppDbProxy(appDb) })
         val awaiters = for {(action, onDb) <- actions.zip(onDbs)} yield {
-          val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb.toSet.contains(p._2)).map(_._1)
+          val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb.contains(p._2)).map(_._1)
           selectedDbProxies.map(p => action.run(p))
-          //dbProxies.map(p => action.run(p))
         }
+
         for {awaiter <- awaiters.flatten} {
           whenReady(awaiter) { result => }
         }

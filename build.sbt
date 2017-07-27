@@ -23,3 +23,6 @@ libraryDependencies ++=
        "org.scalatest" %% "scalatest" % "3.0.1" % "test")
 
 mainClass in Compile := Some("moshpit.Main")
+logBuffered in Test := false
+
+//testOptions in Test += Tests.Argument(TestFrameworks.ScalaCheck, "-maxSize", "120", "-minSuccessfulTests", "500", "-workers", "1", "-verbosity", "1")
