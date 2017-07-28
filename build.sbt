@@ -25,4 +25,4 @@ libraryDependencies ++=
 mainClass in Compile := Some("moshpit.Main")
 logBuffered in Test := false
 
-//testOptions in Test += Tests.Argument(TestFrameworks.ScalaCheck, "-maxSize", "120", "-minSuccessfulTests", "500", "-workers", "1", "-verbosity", "1")
+testOptions in Test += Tests.Argument(TestFrameworks.ScalaCheck, "-maxSize", "120", "-minSuccessfulTests", "500", "-workers", "1", "-verbosity", "1")

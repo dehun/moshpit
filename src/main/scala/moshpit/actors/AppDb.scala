@@ -195,7 +195,6 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       log.debug("querying apps")
       val appHashes = apps.map({case (appId, instancesGuids) => {
         val appIntsances = instancesGuids.toList.sorted.map(guid => instances((appId, guid)))
-        log.info("{} {}", appId, appIntsances.toString().sha1.hash)
         (appId, appIntsances.toString().sha1.hash)
       }})
       sender ! Messages.QueryApps.Response(appHashes)

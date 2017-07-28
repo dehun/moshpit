@@ -50,7 +50,10 @@ class P2p(ourGuid:String, appDbRef:ActorRef, seeds:Seq[String]) extends Actor {
   val ourPath = hostportToActorPath(
     context.system.settings.config.getString("akka.remote.netty.tcp.hostname")+ ":" +
       context.system.settings.config.getInt("akka.remote.netty.tcp.port").toString)
+
   appDbProxy.updateInstance("moshpit", ourGuid, ourPath.toString)
+  context.system.scheduler.schedule(15 seconds, 15 seconds,
+    () => appDbProxy.pingInstance("moshpit", ourGuid))
 
   override def receive: Receive = {
     case P2p.Messages.ConnectedPeer(guid, ref) =>

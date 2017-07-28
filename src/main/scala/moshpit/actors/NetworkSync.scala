@@ -1,7 +1,7 @@
 package moshpit.actors
 
 import com.roundeights.hasher.Implicits._
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, ActorRef, Cancellable, Props}
 import akka.event.Logging
 import com.roundeights.hasher.Hash
 import moshpit.VClock
@@ -9,7 +9,8 @@ import moshpit.actors.NetworkSync.Tasks.AdvertiseRootTask
 import cats._
 import cats.data._
 import cats.implicits._
-import scala.util.{Success, Failure}
+
+import scala.util.{Failure, Success}
 import scala.concurrent.duration._
 
 
@@ -52,8 +53,13 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
   override def preStart(): Unit = p2p ! P2p.Messages.Subscribe(context.self)
   import context.dispatcher
 
-  context.system.scheduler.schedule(1 seconds, 1 seconds,
-    context.self, Tasks.AdvertiseRootTask())
+  var advertiseRootTask:Option[Cancellable] = None
+  def rescheduleAdvert() = {
+    advertiseRootTask.map(_.cancel())
+    advertiseRootTask = Some(context.system.scheduler.schedule(1 seconds, 1 seconds,
+      context.self, Tasks.AdvertiseRootTask()))
+  }
+  rescheduleAdvert()
 
   override def receive: Receive = {
     case Tasks.AdvertiseRootTask() =>
@@ -82,6 +88,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         })
 
       case Messages.PushApps(theirApps) =>
+        rescheduleAdvert()
         appDbProxy.queryApps().map(ourApps => {
           val our = ourApps.toSet
           val their = theirApps.toSet
@@ -93,12 +100,14 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         })
 
       case Messages.RequestInstancesMeta(appIds) =>
+        rescheduleAdvert()
         appIds.map(appId => appDbProxy.queryApp(appId, stripped = false).map(r => (appId, r))).toList.sequenceU.map(res => {
           log.debug(s"sending instances meta ${res.toMap}")
           p2p ! P2p.Messages.Send(sender, Messages.PushInstancesMeta(res.toMap))
         })
 
       case Messages.PushInstancesMeta(theirApps) =>
+        rescheduleAdvert()
         log.debug(s"got pushInstances")
         theirApps.keys.foreach(appId => appDbProxy.queryApp(appId, stripped = false).map(ourInstances => {
           val theirInstances = theirApps(appId).toSet
@@ -125,6 +134,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         }))
 
       case Messages.RequestFullInstance(appId, instanceGuid) =>
+        rescheduleAdvert()
         log.debug(s"got request for full instance $appId::$instanceGuid")
         appDbProxy.queryInstance(appId, instanceGuid, stripped = false).andThen({
           case Success(AppDb.Messages.QueryInstance.Success(meta, data)) =>
@@ -134,8 +144,10 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         })
 
       case Messages.PushFullInstance(instanceGuid, meta, data) =>
+        rescheduleAdvert()
         log.debug(s"got full instance for ${meta.appId} and $instanceGuid with meta $meta")
         appDbProxy.syncInstance(instanceGuid, meta, data)
+        //self ! Tasks.AdvertiseRootTask()
     }
   }
 }
