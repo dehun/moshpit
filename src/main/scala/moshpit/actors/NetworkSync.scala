@@ -9,6 +9,7 @@ import moshpit.actors.NetworkSync.Tasks.AdvertiseRootTask
 import cats._
 import cats.data._
 import cats.implicits._
+import org.joda.time.DateTime
 
 import scala.util.{Failure, Success}
 import scala.concurrent.duration._
@@ -53,6 +54,10 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
   override def preStart(): Unit = p2p ! P2p.Messages.Subscribe(context.self)
   import context.dispatcher
 
+  val peerTtl = 5*1000
+  var sawPeers = Map.empty[String, DateTime]
+  def activePeers:Set[String] = sawPeers.filter(p => p._2.compareTo(DateTime.now().minus(peerTtl)) == 1).keySet
+
   var advertiseRootTask:Option[Cancellable] = None
   def rescheduleAdvert() = {
     advertiseRootTask.map(_.cancel())
@@ -64,6 +69,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
   override def receive: Receive = {
     case Tasks.AdvertiseRootTask() =>
       appDbProxy.queryRootHash().map(ourHash => {
+        sawPeers = sawPeers.updated(ourGuid, DateTime.now())
         log.debug("advertising root hash")
         p2p ! P2p.Messages.Broadcast(Messages.AdvertiseRootHash(ourHash))
       })
@@ -71,6 +77,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
     case P2p.NetMessages.Message(sender, payload) => payload match {
       case Messages.AdvertiseRootHash(theirHash) =>
         appDbProxy.queryRootHash().map(ourHash => {
+          sawPeers = sawPeers.updated(sender, DateTime.now())
           if (ourHash != theirHash) {
             log.debug("root hash mismatch, start sync")
             p2p ! P2p.Messages.Send(sender, Messages.RequestApps(theirHash))
@@ -117,7 +124,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
             .foreach(s => {
             val ourInstanceOpt = ourInstances.get(s._1)
             if (ourInstanceOpt.exists(ourVc => ourVc.isConflicting(s._2))) {
-              if (sender < ourGuid) {
+              if (activePeers.min === sender) {
                 // sender is the resolver, let em have full instance
                 log.debug(s"he $sender is the resolver for $appId, ${s._1}")
                 p2p ! P2p.Messages.Send(sender, Messages.RequestFullInstance(appId, s._1))

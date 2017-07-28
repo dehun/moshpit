@@ -36,12 +36,8 @@ class P2pMock(ourGuid:String) extends Actor {
 
   override def receive: Receive = {
     case P2p.Messages.Send(guid, payload) =>
-//      Console.println(s"sending towards $guid $payload")
-      //val sendingSubscriber = subscribers.find(_._2 == sender()).get
       subscribers(guid) ! P2p.NetMessages.Message(ourGuid, payload)
     case P2p.Messages.Broadcast(payload) =>
-      //Console.println(s"broadcasting towards everyone")
-//      Console.println(s"$ourGuid mock broadcast $payload")
       val sendingSubscriber = subscribers.find(_._2 == sender()).get
       subscribers.filter(_._1 != ourGuid).values.foreach(_ ! P2p.NetMessages.Message(sendingSubscriber._1, payload))
     case P2p.Messages.Subscribe(subscriber) =>
@@ -49,7 +45,6 @@ class P2pMock(ourGuid:String) extends Actor {
     case P2pMock.Messages.ExtraSubscriber(sguid, ref) =>
       subscribers = subscribers.updated(sguid, ref)
     case msg@P2p.NetMessages.Message(snd, payload) =>
-//      Console.println(s"receiving from $snd $payload towards $ourGuid")
       subscribers(ourGuid) ! msg
   }
 }
@@ -165,7 +160,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
     case class MultiSyncTestCase(nDbs:Int, actions:List[DbActions.DbAction], onDbs:List[Set[Int]])
     lazy val genMultiSyncTestCase = for {
       nDbs <- Gen.choose[Int](2, 5)
-      nActions <- Gen.choose[Int](1, 32)
+      nActions <- Gen.choose[Int](1, 4)
       actions <- Gen.listOfN(nActions, DbActions.gen)
       onDbs <- Gen.listOfN(actions.size, Gen.nonEmptyListOf[Int](Gen.choose[Int](0, nDbs - 1)).map(_.toSet))
     } yield MultiSyncTestCase(nDbs, actions, onDbs)
