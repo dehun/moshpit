@@ -40,8 +40,8 @@ class AppDbProxy(appDb:ActorRef) {
     appDb ! Messages.UpdateInstance(appId, instanceGuid, instanceData)
   def pingInstance(appId:String, instanceGuid:String):Future[Messages.PingInstance.Response] =
     ask(appDb, Messages.PingInstance.Request(appId, instanceGuid)).mapTo[Messages.PingInstance.Response]
-  def syncInstance(instanceGuid:String, meta:InstanceMetaInfo, data:String):Unit =
-    appDb ! Messages.SyncInstance(instanceGuid, meta, data)
+  def syncInstance(instanceGuid:String, meta:InstanceMetaInfo, data:String):Future[Messages.SyncInstance.Response] =
+    ask(appDb, Messages.SyncInstance.Request(instanceGuid, meta, data)).mapTo[Messages.SyncInstance.Response]
   def deleteInstance(appId:String, instanceGuid:String):Future[Messages.DeleteInstance.Response] =
     ask(appDb, Messages.DeleteInstance.Request(appId, instanceGuid)).mapTo[Messages.DeleteInstance.Response]
   def forceGc() =
@@ -54,7 +54,12 @@ object AppDb {
 
   object Messages {
     case class UpdateInstance(appId:String, instanceGuid:String, instanceData:String)
-    case class SyncInstance(instanceGuid:String, meta:InstanceMetaInfo, data:String)
+
+    object SyncInstance {
+      case class Request(instanceGuid: String, meta: InstanceMetaInfo, data: String)
+      case class Response(oldMeta:Option[InstanceMetaInfo], newMeta:InstanceMetaInfo, newData:String)
+    }
+
     object PingInstance {
       case class Request(appId: String, instanceGuid: String)
       trait Response
@@ -141,19 +146,22 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
           instances = instances.updated((appId, instanceGuid), (newMetaInfo, instanceData))
       }
 
-    case Messages.SyncInstance(instanceGuid, theirMeta, theirData) =>
+    case Messages.SyncInstance.Request(instanceGuid, theirMeta, theirData) =>
       instances.get((theirMeta.appId, instanceGuid)) match {
         case None =>
           log.info(s"obtained new instance ${theirMeta.appId}::$instanceGuid")
           instances = instances.updated((theirMeta.appId, instanceGuid), (theirMeta, theirData))
           apps = apps.updated(theirMeta.appId, apps.get(theirMeta.appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
+          sender() ! Messages.SyncInstance.Response(None, theirMeta, theirData)
         case Some((ourMeta, ourData)) =>
           if (ourMeta.vclock.isSubclockOf(theirMeta.vclock)) {
             assert (ourMeta.appId == theirMeta.appId)
             log.info(s"substituting ours ${ourMeta.appId}::$instanceGuid with theirs ${theirMeta.appId}::$instanceGuid , as ours is part of timeline and is before")
             instances = instances.updated((theirMeta.appId, instanceGuid), (theirMeta, theirData))
+            sender() ! Messages.SyncInstance.Response(Some(ourMeta), theirMeta, theirData)
           } else if (theirMeta.vclock.isSubclockOf(ourMeta.vclock)) {
             log.info(s"ignoring update of ${theirMeta.appId}::$instanceGuid as ours is more advance")
+            sender() ! Messages.SyncInstance.Response(Some(ourMeta), ourMeta, ourData)
           } else { // conflict, newest wins
             val (newMeta, newData) =
               if (theirMeta.lastUpdated.compareTo(ourMeta.lastUpdated) > 0) {
@@ -166,7 +174,8 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
                 DateTime.now(), wasDeleted = ourMeta.wasDeleted, instanceTtlSec, ourMeta.appId), ourData)
             }
 
-            instances = instances.updated((theirMeta.appId, instanceGuid), (newMeta, theirData))
+            instances = instances.updated((theirMeta.appId, instanceGuid), (newMeta, newData))
+            sender() ! Messages.SyncInstance.Response(Some(ourMeta), newMeta, newData)
           }
       }
 

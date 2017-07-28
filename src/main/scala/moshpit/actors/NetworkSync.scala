@@ -120,16 +120,16 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
           val theirInstances = theirApps(appId).toSet
           val toSync = theirInstances.diff(ourInstances.toSet)
           log.debug(s"to sync $toSync, ours = ${ourInstances.toSet}, theirs=${theirInstances.toSet}")
-          toSync//.filterNot(i => ourInstances.get(i._1).exists(v => v.isSubclockOf(i._2))) // if theirs is future of time of ours
+          toSync
             .foreach(s => {
             val ourInstanceOpt = ourInstances.get(s._1)
             if (ourInstanceOpt.exists(ourVc => ourVc.isConflicting(s._2))) {
-              if (activePeers.min === sender) {
-                // sender is the resolver, let em have full instance
-                log.debug(s"he $sender is the resolver for $appId, ${s._1}")
+              if (ourGuid < sender) {
+                // we are the resolver, let's have full instance
+                log.debug(s"we($ourGuid) are the resolver for $appId, ${s._1}")
                 p2p ! P2p.Messages.Send(sender, Messages.RequestFullInstance(appId, s._1))
               } else {
-                log.debug(s"we($ourGuid) are the resolver for $appId, ${s._1}")
+                log.debug(s"sender $sender is the the resolver for $appId, ${s._1}")
               }
             } else  if (ourInstanceOpt.exists(ourVc => s._2.isSubclockOf(ourVc))) {
               log.debug(s"do not request full instance, ours is newer $appId::${s._1}")
@@ -153,8 +153,13 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
       case Messages.PushFullInstance(instanceGuid, meta, data) =>
         rescheduleAdvert()
         log.debug(s"got full instance for ${meta.appId} and $instanceGuid with meta $meta")
-        appDbProxy.syncInstance(instanceGuid, meta, data)
-        //self ! Tasks.AdvertiseRootTask()
+        appDbProxy.syncInstance(instanceGuid, meta, data).onComplete({
+          case Success(AppDb.Messages.SyncInstance.Response(oldMeta, newMeta, newData)) =>
+            if (oldMeta.exists(om => om.vclock.isConflicting(meta.vclock)))
+              p2p ! P2p.Messages.Send(sender, Messages.PushFullInstance(instanceGuid, newMeta, newData))
+          case Failure(res) =>
+            log.error(s"failure during asking for instance sync $res")
+        })
     }
   }
 }

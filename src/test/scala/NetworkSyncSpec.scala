@@ -192,7 +192,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
         eventually {
           val hashes = dbProxies.map(proxy => whenReady(proxy.queryRootHash()) { hash => hash })
           val referenceHash = hashes.head
-          hashes.toSet shouldEqual Set(referenceHash)
+          hashes shouldEqual Set(referenceHash)
         }
         Console.println("!!!! success !!!!!")
       }
