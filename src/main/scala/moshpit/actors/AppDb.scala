@@ -12,6 +12,7 @@ import moshpit.actors.AppDb.Tasks
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import moshpit.Hashable._
+import org.joda.time.DateTimeZone
 
 object InstanceMetaInfo {
   implicit def instanceMetaInfo2Hashable(meta:InstanceMetaInfo):Hashable = new Hashable {
@@ -25,7 +26,7 @@ case class InstanceMetaInfo(vclock: VClock, lastUpdated:DateTime, wasDeleted:Boo
   def delete(requester:String, now:DateTime):InstanceMetaInfo =
     InstanceMetaInfo(vclock.update(requester), now, wasDeleted=true, instanceTtlSec, appId)
   def isDead():Boolean =
-    wasDeleted || (lastUpdated.compareTo(DateTime.now().minus(instanceTtlSec*1000)) == -1)
+    wasDeleted || (lastUpdated.compareTo(DateTime.now(DateTimeZone.UTC).minus(instanceTtlSec*1000)) == -1)
 }
 
 class AppDbProxy(appDb:ActorRef) {
@@ -144,14 +145,14 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       instances.get((appId, instanceGuid)) match {
         case Some((meta, _)) =>
           log.debug(s"updating old instance $appId::$instanceGuid")
-          val newMetaInfo = meta.update(ourGuid, DateTime.now())
+          val newMetaInfo = meta.update(ourGuid, DateTime.now(DateTimeZone.UTC))
           instances = instances.updated((appId, instanceGuid), (newMetaInfo, instanceData))
           apps = apps.updated(appId, apps.get(appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
 
         case None =>
           log.debug(s"registering new instance $appId::$instanceGuid")
           apps = apps.updated(appId, apps.get(appId).map(_ + instanceGuid).getOrElse(Set(instanceGuid)))
-          val newMetaInfo = InstanceMetaInfo(VClock.empty.update(ourGuid), DateTime.now(),
+          val newMetaInfo = InstanceMetaInfo(VClock.empty.update(ourGuid), DateTime.now(DateTimeZone.UTC),
             wasDeleted = false, instanceTtlSec, appId)
           instances = instances.updated((appId, instanceGuid), (newMetaInfo, instanceData))
       }
@@ -177,11 +178,13 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
               if (theirMeta.lastUpdated.compareTo(ourMeta.lastUpdated) > 0) {
                 log.debug(s"got conflicting entries for ${theirMeta.appId}::$instanceGuid, and their is newer")
                 (InstanceMetaInfo(VClock.resolve(ourGuid, theirMeta.vclock, ourMeta.vclock),
-                  DateTime.now(), wasDeleted = theirMeta.wasDeleted, instanceTtlSec, theirMeta.appId), theirData)
+                  DateTime.now(DateTimeZone.UTC), wasDeleted = theirMeta.wasDeleted,
+                  instanceTtlSec, theirMeta.appId), theirData)
             } else {
                 log.debug(s"got conflicting entries for ${theirMeta.appId}::$instanceGuid, and our is newer")
                 (InstanceMetaInfo(VClock.resolve(ourGuid, theirMeta.vclock, ourMeta.vclock),
-                DateTime.now(), wasDeleted = ourMeta.wasDeleted, instanceTtlSec, ourMeta.appId), ourData)
+                DateTime.now(DateTimeZone.UTC), wasDeleted = ourMeta.wasDeleted,
+                  instanceTtlSec, ourMeta.appId), ourData)
             }
 
             instances = instances.updated((theirMeta.appId, instanceGuid), (newMeta, newData))
@@ -197,7 +200,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
         case Some((meta, data)) =>
           if (!meta.wasDeleted) {
             log.debug(s"pinging instance $appId:$instanceGuid")
-            val newMeta = meta.update(ourGuid, DateTime.now())
+            val newMeta = meta.update(ourGuid, DateTime.now(DateTimeZone.UTC))
             instances = instances.updated((appId, instanceGuid), (newMeta, data))
             sender() ! Messages.PingInstance.Success()
           } else {
@@ -245,7 +248,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       instances.get((appId, instanceGuid)) match {
         case Some((meta, data)) =>
           log.debug(s"deleting $appId::$instanceGuid")
-          instances = instances.updated((appId, instanceGuid), (meta.delete(ourGuid, DateTime.now()), data))
+          instances = instances.updated((appId, instanceGuid), (meta.delete(ourGuid, DateTime.now(DateTimeZone.UTC)), data))
           sender() ! Messages.DeleteInstance.Success()
         case None =>
           log.info(s"deleting  error, not found $appId::$instanceGuid")
@@ -256,7 +259,7 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       log.debug("running gc")
       val instancesToClear = instances
         .filter({ case (guid, (meta, _)) =>
-          meta.isDead() && meta.lastUpdated.compareTo(DateTime.now().minus(gcInstanceTtlSec*1000)) == -1 })
+          meta.isDead() && meta.lastUpdated.compareTo(DateTime.now(DateTimeZone.UTC).minus(gcInstanceTtlSec*1000)) == -1 })
         .keys.toSet
       instancesToClear.foreach({case (appId, guid) =>
         apps = apps.updated(appId, apps.get(appId).map(_ - guid).getOrElse(Set.empty))

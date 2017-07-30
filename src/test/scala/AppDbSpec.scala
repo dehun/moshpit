@@ -5,7 +5,7 @@ import akka.testkit.{ImplicitSender, TestActors, TestKit}
 import com.roundeights.hasher.Hash
 import moshpit.{VClock, actors}
 import moshpit.actors.{AppDb, AppDbProxy, InstanceMetaInfo}
-import org.joda.time.DateTime
+import org.joda.time.{DateTime, DateTimeZone}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience, PatienceConfiguration, ScalaFutures}
 import org.scalatest.{BeforeAndAfterAll, Inside, Matchers, WordSpecLike}
 import org.scalatest.Matchers._
@@ -144,7 +144,7 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(DateTimeZone.UTC), wasDeleted = false, 60, "soapp")
         , "new wow")
       whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
         data should ===("new wow")
@@ -161,12 +161,12 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(DateTimeZone.UTC), wasDeleted = false, 60, "soapp")
         , "new wow")
       whenReady(appDbProxy.pingInstance("soapp", "soinstance")) { case AppDb.Messages.PingInstance.Success() => }
 
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(DateTimeZone.UTC), wasDeleted = false, 60, "soapp")
         , "absolutely barbaic")
 
       whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
@@ -184,12 +184,12 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(DateTimeZone.UTC), wasDeleted = false, 60, "soapp")
         , "new wow")
       whenReady(appDbProxy.deleteInstance("soapp", "soinstance")) { case AppDb.Messages.DeleteInstance.Success() => }
 
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(DateTimeZone.UTC), wasDeleted = false, 60, "soapp")
         , "absolutely barbaic")
 
       whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
@@ -207,12 +207,12 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       val appDbProxy = new AppDbProxy(system.actorOf(AppDb.props("1", 60, 60, 1200)))
       appDbProxy.updateInstance("soapp", "soinstance", "wow")
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(), wasDeleted = false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 1)), DateTime.now(DateTimeZone.UTC), wasDeleted = false, 60, "soapp")
         , "new wow")
       whenReady(appDbProxy.pingInstance("soapp", "soinstance")) { case AppDb.Messages.PingInstance.Success() => } // bump first one
 
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 2)), DateTime.now(), wasDeleted = false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 2)), DateTime.now(DateTimeZone.UTC), wasDeleted = false, 60, "soapp")
         , "i am the overrider")
 
       whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
