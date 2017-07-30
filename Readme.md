@@ -1,4 +1,6 @@
 # Moshpit #
+[![Build Status](https://travis-ci.org/dehun/moshpit.svg?branch=master)](https://travis-ci.org/dehun/moshpit)
+
 ## Intro ##
 Moshpit is AP P2P based service discovery. It was heavily inspired by netflix-eureka, but deliberately was made to be more lightweight.
 Instances of application register themselfs through the RESTful interface and continiously heartbeating(pinging) to prove that they are still alive.
