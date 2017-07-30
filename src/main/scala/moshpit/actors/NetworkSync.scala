@@ -95,7 +95,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         })
 
       case Messages.PushApps(theirApps) =>
-        rescheduleAdvert()
+        //rescheduleAdvert()
         appDbProxy.queryApps().map(ourApps => {
           val our = ourApps.toSet
           val their = theirApps.toSet
@@ -110,14 +110,14 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
 
       case Messages.RequestInstancesMeta(appIds) =>
         log.debug(s"$sender requested instances meta")
-        rescheduleAdvert()
+        //rescheduleAdvert()
         appIds.map(appId => appDbProxy.queryApp(appId, stripped = false).map(r => (appId, r))).toList.sequenceU.map(res => {
           log.debug(s"sending instances meta ${res.toMap}")
           p2p ! P2p.Messages.Send(sender, Messages.PushInstancesMeta(res.toMap))
         })
 
       case Messages.PushInstancesMeta(theirApps) =>
-        rescheduleAdvert()
+        //rescheduleAdvert()
         log.debug(s"got pushInstances")
         theirApps.keys.foreach(appId => appDbProxy.queryApp(appId, stripped = false).map(ourInstances => {
           val theirInstances = theirApps(appId).toSet
@@ -144,7 +144,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         }))
 
       case Messages.RequestFullInstance(appId, instanceGuid) =>
-        rescheduleAdvert()
+        //rescheduleAdvert()
         log.debug(s"got request for full instance $appId::$instanceGuid")
         appDbProxy.queryInstance(appId, instanceGuid, stripped = false).andThen({
           case Success(AppDb.Messages.QueryInstance.Success(meta, data)) =>
@@ -154,7 +154,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         })
 
       case Messages.PushFullInstance(instanceGuid, meta, data) =>
-        rescheduleAdvert()
+        //rescheduleAdvert()
         log.debug(s"got full instance for ${meta.appId} and $instanceGuid with meta $meta")
         appDbProxy.syncInstance(instanceGuid, meta, data).onComplete({
           case Success(AppDb.Messages.SyncInstance.Response(oldMeta, newMeta, newData)) =>

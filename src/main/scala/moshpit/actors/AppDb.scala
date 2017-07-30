@@ -5,7 +5,6 @@ import akka.event.Logging
 import akka.pattern._
 import akka.util.Timeout
 import com.roundeights.hasher.Hash
-import com.roundeights.hasher.Implicits._
 import moshpit.{Hashable, VClock}
 import com.github.nscala_time.time.Imports.DateTime
 import moshpit.actors.AppDb.Tasks

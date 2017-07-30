@@ -41,4 +41,8 @@ object Hashable {
   implicit def set2Hashable[T](xs:Set[T])(implicit toHashable:T => Hashable):Hashable = new Hashable {
     override def hash: Hash = xs.toList.map(_.hash.hex).sorted.hash
   }
+
+  implicit def hash2Hashable(x:Hash):Hashable = new Hashable {
+    override def hash: Hash = x
+  }
 }

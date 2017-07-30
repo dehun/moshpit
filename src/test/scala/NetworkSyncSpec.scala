@@ -22,6 +22,7 @@ import cats._
 import cats.implicits._
 import cats.data._
 import org.scalacheck.Test.Parameters
+import moshpit.Hashable._
 
 import scala.concurrent.Future
 
@@ -192,10 +193,11 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
           whenReady(awaiter) { result => }
         }
 
+
         eventually {
-          val hashes = dbProxies.map(proxy => whenReady(proxy.queryRootHash()) { hash => hash })
-          val referenceHash = hashes.head
-          hashes shouldEqual Set(referenceHash)
+          val apps = dbProxies.map(proxy => whenReady(proxy.queryApps()) { apps => (apps - "moshpit") })
+          val referenceApp = apps.head
+          apps shouldEqual Set(referenceApp)
         }
         Console.println("!!!! success !!!!!")
       }
@@ -230,9 +232,9 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
         }
 
         eventually {
-          val hashes = dbProxies.map(proxy => whenReady(proxy.queryRootHash()) { hash => hash })
-          val referenceHash = hashes.head
-          hashes shouldEqual Set(referenceHash)
+          val apps = dbProxies.map(proxy => whenReady(proxy.queryApps()) { apps => (apps - "moshpit") })
+          val referenceApp = apps.head
+          apps shouldEqual Set(referenceApp)
         }
         Console.println("!!!! success !!!!!")
       }
