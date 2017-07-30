@@ -209,6 +209,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
           val ns = nss.toList
           ns.init.zip(ns.tail)
         }
+
         // connect minimal p2p
         for ((p1, p2) <- mst) {
           val (lguid, lp2p, _, _) = p1

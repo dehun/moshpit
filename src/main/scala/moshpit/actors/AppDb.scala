@@ -114,12 +114,14 @@ object AppDb {
   }
 }
 
-class HashedMap[K, V](val assocs:Map[K, V])(implicit cmp:Ordering[K]) {
-  lazy val hash = assocs.toList.sortBy(_._1).toString().sha1.hash
+class HashedMap[K, V](val assocs:Map[K, V])(implicit cmp:Ordering[K],
+                                            toHashableK: K => Hashable, toHashableB: V => Hashable) {
+  lazy val hash = assocs.hash
 }
 
 object HashedMap {
-  implicit def map2HashedMap[K, V](m:Map[K, V])(implicit cmp:Ordering[K]):HashedMap[K, V] = new HashedMap(m)
+  implicit def map2HashedMap[K, V](m:Map[K, V])(implicit cmp:Ordering[K],
+                                                toHashableK: K => Hashable, toHashableB: V => Hashable):HashedMap[K, V] = new HashedMap(m)
   implicit def hashedMap2Map[K, V](m:HashedMap[K, V])(implicit cmp:Ordering[K]):Map[K, V] = m.assocs
 }
 

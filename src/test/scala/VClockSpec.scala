@@ -50,5 +50,11 @@ class VClockSpec extends  Matchers with WordSpecLike  with GeneratorDrivenProper
         clocks.foreach({vc => vc.isSubclockOf(rvc) shouldBe true})
       }
     }
+
+    "hashing works" in {
+      forAll (genClock) { (vc) =>
+        vc.update("1").update("2").hash should === (vc.update("2").update("1").hash)
+      }
+    }
   }
 }
