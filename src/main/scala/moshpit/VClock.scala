@@ -1,6 +1,10 @@
 package moshpit
 
+import com.roundeights.hasher.Hash
+
+
 object VClock {
+  import moshpit.Hashable._
   def resolve(resolverId:String, lhs: VClock, rhs: VClock):VClock =
     if (lhs.isSubclockOf(rhs)) rhs
     else if (rhs.isSubclockOf(lhs)) lhs
@@ -10,6 +14,8 @@ object VClock {
       new VClock(newStamps).update(resolverId)
     }
   def empty = new VClock(Map.empty[String, Int])
+
+  implicit def vclock2Hashable(vc:VClock):Hashable = vc.stamps
 }
 
 case class VClock(stamps: Map[String, Int]) {

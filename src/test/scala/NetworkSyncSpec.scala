@@ -38,8 +38,11 @@ class P2pMock(ourGuid:String) extends Actor {
     case P2p.Messages.Send(guid, payload) =>
       subscribers(guid) ! P2p.NetMessages.Message(ourGuid, payload)
     case P2p.Messages.Broadcast(payload) =>
-      val sendingSubscriber = subscribers.find(_._2 == sender()).get
-      subscribers.filter(_._1 != ourGuid).values.foreach(_ ! P2p.NetMessages.Message(sendingSubscriber._1, payload))
+      subscribers.find(_._2 == sender()) match {
+        case Some(sendingSubscriber) =>
+          subscribers.filter (_._1 != ourGuid).values.foreach (_! P2p.NetMessages.Message (sendingSubscriber._1, payload) )
+        case None =>
+      }
     case P2p.Messages.Subscribe(subscriber) =>
       self ! P2pMock.Messages.ExtraSubscriber(ourGuid, subscriber)
     case P2pMock.Messages.ExtraSubscriber(sguid, ref) =>
@@ -159,14 +162,14 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
 
     case class MultiSyncTestCase(nDbs:Int, actions:List[DbActions.DbAction], onDbs:List[Set[Int]])
     lazy val genMultiSyncTestCase = for {
-      nDbs <- Gen.choose[Int](2, 5)
-      nActions <- Gen.choose[Int](1, 4)
+      nDbs <- Gen.choose[Int](2, 7)
+      nActions <- Gen.choose[Int](1, 16)
       actions <- Gen.listOfN(nActions, DbActions.gen)
       onDbs <- Gen.listOfN(actions.size, Gen.nonEmptyListOf[Int](Gen.choose[Int](0, nDbs - 1)).map(_.toSet))
     } yield MultiSyncTestCase(nDbs, actions, onDbs)
 
 
-    "syncs N databases to the state of independent database" in {
+    "syncs N databases to the state of independent database in full p2p mode" in {
       forAll(genMultiSyncTestCase) { case MultiSyncTestCase(nDbs, actions, onDbs) =>
         val nss = (1 to nDbs).map(_ => spawnNs()).toSet
         // susscribe to each others p2p
@@ -176,6 +179,42 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
             val (rguid, rp2p, _, _) = rs
             rp2p ! P2pMock.Messages.ExtraSubscriber(nguid, np2p)
           }
+        }
+
+        // conduct actions
+        val dbProxies = nss.map({ case (guid, p2p, appDb, ns) => new AppDbProxy(appDb) })
+        val awaiters = for {(action, onDb) <- actions.zip(onDbs)} yield {
+          val selectedDbProxies = dbProxies.zipWithIndex.filter(p => onDb.contains(p._2)).map(_._1)
+          selectedDbProxies.map(p => action.run(p))
+        }
+
+        for {awaiter <- awaiters.flatten} {
+          whenReady(awaiter) { result => }
+        }
+
+        eventually {
+          val hashes = dbProxies.map(proxy => whenReady(proxy.queryRootHash()) { hash => hash })
+          val referenceHash = hashes.head
+          hashes shouldEqual Set(referenceHash)
+        }
+        Console.println("!!!! success !!!!!")
+      }
+    }
+
+    "syncs N databases to the state of independent database in minimally connected p2p mode" in {
+      forAll(genMultiSyncTestCase) { case MultiSyncTestCase(nDbs, actions, onDbs) =>
+        val nss = (1 to nDbs).map(_ => spawnNs()).toSet
+        // susscribe to each others p2p
+        val mst = {
+          val ns = nss.toList
+          ns.init.zip(ns.tail)
+        }
+        // connect minimal p2p
+        for ((p1, p2) <- mst) {
+          val (lguid, lp2p, _, _) = p1
+          val (rguid, rp2p, _, _) = p2
+          lp2p ! P2pMock.Messages.ExtraSubscriber(rguid, rp2p)
+          rp2p ! P2pMock.Messages.ExtraSubscriber(lguid, lp2p)
         }
 
         // conduct actions

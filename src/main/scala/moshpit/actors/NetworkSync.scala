@@ -99,14 +99,17 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         appDbProxy.queryApps().map(ourApps => {
           val our = ourApps.toSet
           val their = theirApps.toSet
-          val toSync = their.diff(our) // our stuff that is different will be synced there by that node ///our.union(their).diff(our.intersect(their))
+          val toSync = their.diff(our)
           if (toSync.nonEmpty) {
             log.debug(s"syncing app $toSync")
             p2p ! P2p.Messages.Send(sender, Messages.RequestInstancesMeta(toSync.map(_._1)))
+          } else {
+            log.debug(s"syncing nothing to $sender")
           }
         })
 
       case Messages.RequestInstancesMeta(appIds) =>
+        log.debug(s"$sender requested instances meta")
         rescheduleAdvert()
         appIds.map(appId => appDbProxy.queryApp(appId, stripped = false).map(r => (appId, r))).toList.sequenceU.map(res => {
           log.debug(s"sending instances meta ${res.toMap}")
@@ -119,7 +122,7 @@ class NetworkSync(ourGuid:String, seeds:Seq[String], appDbRef:ActorRef,
         theirApps.keys.foreach(appId => appDbProxy.queryApp(appId, stripped = false).map(ourInstances => {
           val theirInstances = theirApps(appId).toSet
           val toSync = theirInstances.diff(ourInstances.toSet)
-          log.debug(s"to sync $toSync, ours = ${ourInstances.toSet}, theirs=${theirInstances.toSet}")
+          log.debug(s"intsances to sync $toSync, ours = ${ourInstances.toSet}, theirs=${theirInstances.toSet}")
           toSync
             .foreach(s => {
             val ourInstanceOpt = ourInstances.get(s._1)

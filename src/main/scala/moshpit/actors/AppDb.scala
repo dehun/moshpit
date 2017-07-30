@@ -6,12 +6,19 @@ import akka.pattern._
 import akka.util.Timeout
 import com.roundeights.hasher.Hash
 import com.roundeights.hasher.Implicits._
-import moshpit.VClock
+import moshpit.{Hashable, VClock}
 import com.github.nscala_time.time.Imports.DateTime
 import moshpit.actors.AppDb.Tasks
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import moshpit.Hashable._
+
+object InstanceMetaInfo {
+  implicit def instanceMetaInfo2Hashable(meta:InstanceMetaInfo):Hashable = new Hashable {
+    override def hash: Hash = List[Hashable](meta.vclock, meta.appId, meta.wasDeleted, meta.lastUpdated).hash
+  }
+}
 
 case class InstanceMetaInfo(vclock: VClock, lastUpdated:DateTime, wasDeleted:Boolean, instanceTtlSec:Int, appId:String) {
   def update(requester:String, now:DateTime):InstanceMetaInfo =
@@ -119,6 +126,8 @@ object HashedMap {
 class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcIntervalSec:Int) extends Actor {
   import AppDb._
   import HashedMap._
+  import InstanceMetaInfo._
+  import Hashable._
 
   private val log =  Logging(context.system, this)
 
@@ -201,10 +210,9 @@ class AppDb(ourGuid:String, instanceTtlSec:Int, gcInstanceTtlSec:Int, gcInterval
       sender() ! Messages.QueryRootHash.Response(rootHash)
 
     case Messages.QueryApps.Request() =>
-      log.debug("querying apps")
       val appHashes = apps.map({case (appId, instancesGuids) => {
-        val appIntsances = instancesGuids.toList.sorted.map(guid => instances((appId, guid)))
-        (appId, appIntsances.toString().sha1.hash)
+        val appIntsances = instancesGuids.map(guid => instances((appId, guid)))
+        (appId, appIntsances.hash)
       }})
       sender ! Messages.QueryApps.Response(appHashes)
 
