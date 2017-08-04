@@ -212,7 +212,7 @@ class AppDbSpec() extends TestKit(ActorSystem("appDbTest"))
       whenReady(appDbProxy.pingInstance("soapp", "soinstance")) { case AppDb.Messages.PingInstance.Success() => } // bump first one
 
       appDbProxy.syncInstance("soinstance",
-        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 2)), DateTime.now(DateTimeZone.UTC), wasDeleted = false, 60, "soapp")
+        InstanceMetaInfo(VClock(Map("1" -> 1, "2" -> 2)), DateTime.now(DateTimeZone.UTC).plusSeconds(1), wasDeleted = false, 60, "soapp")
         , "i am the overrider")
 
       whenReady(appDbProxy.queryInstance("soapp", "soinstance", stripped = false)) { case (AppDb.Messages.QueryInstance.Success(meta, data)) =>
