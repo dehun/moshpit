@@ -19,7 +19,7 @@ class MoshpitMain extends Actor {
     config.getInt("moshpit.gc-instance-ttl-sec"),
     config.getInt("moshpit.gc-interval-sec")), "appDb")
   private val networkSync = context.actorOf(NetworkSync.props(peerGuid, seeds, appDb), "networkSync")
-  private val restapi = context.actorOf(RestApi.props("localhost", config.getInt("moshpit.rest-api-port"), appDb))
+  private val restapi = context.actorOf(RestApi.props("moshpit.rest-api-host", config.getInt("moshpit.rest-api-port"), appDb))
 
   override def receive: Receive = {
     case x => Console.println(x)
