@@ -88,6 +88,7 @@ class NetworkSyncSpec extends TestKit(ActorSystem("networkSyncTest"))
     }
 
     "asks for apps when hash mistmatch" in {
+      pending
       ignoreMsg({case (P2p.NetMessages.Message(_, NetworkSync.Messages.AdvertiseRootHash(_))) => true })
       val (guid, p2p, appDb, ns) = spawnNs()
       p2p ! P2pMock.Messages.ExtraSubscriber(testerGuid, self)
